@@ -91,9 +91,12 @@ function start_pkg() {
     # with the plugin, so they don't need the version in their filename.
     NAME=${1#*/}
 
+    echo "attempting to start $NAME"
+
     START_SCRIPT="$GOW_PLUGIN/scripts/start/$NAME.sh"
 
     if [ -f "$START_SCRIPT" ]; then
+        echo "executing $START_SCRIPT"
         bash "$START_SCRIPT"
     fi
 }
@@ -127,8 +130,6 @@ for pkg in $GOW_PACKAGES; do
             echo "Could not install $pkg"
             exit 1
         fi
-
-        start_pkg "$pkg"
     else
         echo "╔═══════╗"
         echo "║ ERROR ║"
@@ -138,7 +139,7 @@ for pkg in $GOW_PACKAGES; do
     fi
 done
 
-echo "Setting up any new modules, please wait"
+echo "Generating module dependencies..."
 
 # in case any kernel modules were installed, update module dependencies and
 # trigger udev events
@@ -147,6 +148,12 @@ sleep 1 # wait a bit
 
 udevadm control --reload 2>/dev/null && udevadm trigger --action=add 2>/dev/null
 sleep 1 # wait a bit longer
+
+echo "Setting up packages..."
+
+for pkg in $GOW_PACKAGES; do
+    start_pkg "$pkg"
+done
 
 echo "╔══════════╗"
 echo "║ Complete ║"

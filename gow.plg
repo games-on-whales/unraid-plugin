@@ -3,7 +3,7 @@
 <!ENTITY name "gow">
 <!ENTITY author "zb140">
 <!ENTITY org "games-on-whales">
-<!ENTITY version "2021.06.27">
+<!ENTITY version "2021.06.27a">
 <!ENTITY launch "Settings/gow">
 <!ENTITY gitURL "https://github.com/&org;/unraid-plugin/raw/main">
 <!ENTITY gitPkgURL "https://github.com/&org;/unraid-plugin/raw/&version;">
@@ -25,6 +25,9 @@
   >
 
   <CHANGES>
+### 2021.06.27a
+- Fix installing after reboot
+
 ### 2021.06.27
 - Fix permissions for /dev/uinput
 - Minor UI fixes
@@ -63,7 +66,7 @@ export GOW_PACKAGES="kernel/uinput common/settings-ui"
   <!-- Bash script to download and install the drivers and utilities -->
   <FILE Name="&script_dir;/install.sh">
     <URL>&gitPkgURL;/scripts/install.sh</URL>
-    <MD5>a1473d06824258830910d7d6114c898b</MD5>
+    <MD5>4080b37b694671987288b0d8dc58f2d1</MD5>
   </FILE>
 
   <!-- Bash script to uninstall -->
