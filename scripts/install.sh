@@ -43,7 +43,7 @@ function pkg_url() {
     PACKAGE_NAME=$(pkg_name "$name")
 
     if [[ $name == kernel/* ]]; then
-        echo "$GOW_GITPKGURL/packages/$PACKAGE_NAME.txz"
+        echo "$GOW_GITPKGURL/kernel-bin/$PACKAGE_NAME.txz"
     else
         echo "https://github.com/games-on-whales/unraid-plugin/releases/download/$PACKAGE_NAME.txz"
     fi
