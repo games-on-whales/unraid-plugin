@@ -60,7 +60,7 @@ export GOW_PACKAGES="kernel/uinput common/settings-ui"
   <!-- Bash script to download and install the drivers and utilities -->
   <FILE Name="&script_dir;/install.sh">
     <URL>&gitPkgUrl;/scripts/install.sh</URL>
-    <MD5>6678b792d8e9d97070e1f9a91fa97e61</MD5>
+    <MD5>f0c364de1345a45c133c09dffe4632ec</MD5>
   </FILE>
 
   <!-- Bash script to uninstall -->
