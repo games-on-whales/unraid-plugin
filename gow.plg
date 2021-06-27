@@ -1,0 +1,98 @@
+<?xml version="1.0" standalone="yes"?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name "gow">
+<!ENTITY prettyname "Games on Whales">
+<!ENTITY author "zb140">
+<!ENTITY org "games-on-whales">
+<!ENTITY version "2021.06.26">
+<!ENTITY launch "Settings/gow">
+<!ENTITY gitURL "https://github.com/&org;/unraid-plugin/raw/main">
+<!ENTITY gitPkgURL "https://github.com/&org;/unraid-plugin/raw/&version;">
+<!ENTITY pluginURL "&gitURL;/&name;.plg">
+<!ENTITY plugin "/boot/config/plugins/&name;">
+<!ENTITY emhttp "/usr/local/emhttp/plugins/&name;">
+<!ENTITY script_dir "&plugin;/scripts/&version;">
+]>
+
+<PLUGIN
+  name="&prettyname;"
+  author="&org;"
+  version="&version;"
+  launch="&launch;"
+  pluginURL="&pluginURL;"
+  min="6.9.2"
+  max="6.9.2"
+  support="https://discord.gg/kRGUDHNHt2"
+  >
+
+  <CHANGES>
+### 2021.06.26
+- Initial version
+  </CHANGES>
+
+  <!--
+    Prepare to install the GoW plugin:
+      * create a temp dir to download scripts to
+      * Remove any pre-existing files corresponding to this version
+  -->
+  <FILE Run="/bin/bash">
+    <INLINE>
+      rm -f $(ls &plugin;/&name;*.txz 2&gt;/dev/null|grep -v '&version;')
+    </INLINE>
+  </FILE>
+
+  <!-- create a bash script that includes all the entities as variables, for convenience -->
+  <FILE Name="&script_dir;/vars.sh">
+    <INLINE>
+export GOW_NAME="&name;"
+export GOW_AUTHOR="&author;":
+export GOW_ORG="&org;"
+export GOW_VERSION="&version;"
+export GOW_LAUNCH="&launch;"
+export GOW_GITURL="&gitURL;"
+export GOW_GITPKGURL="&gitPkgURL;"
+export GOW_PLUGINURL="&pluginURL;"
+export GOW_PLUGIN="&plugin;"
+export GOW_EMHTTP="&emhttp;"
+export GOW_PACKAGES="kernel/uinput common/settings-ui"
+    </INLINE>
+  </FILE>
+  <!-- Bash script to download and install the drivers and utilities -->
+  <FILE Name="&script_dir;/install.sh">
+    <URL>&gitPkgUrl;/scripts/install.sh</URL>
+    <MD5>6678b792d8e9d97070e1f9a91fa97e61</MD5>
+  </FILE>
+
+  <!-- Bash script to uninstall -->
+  <FILE Name="&script_dir;/uninstall.sh">
+    <URL>&gitPkgUrl;/scripts/uninstall.sh</URL>
+    <MD5>f02dfc24bf678b7816f5f2caeca5bb19</MD5>
+  </FILE>
+
+  <FILE Run="/bin/bash">
+    <INLINE>
+      echo "╔════════════════════════════╗"
+      echo "║ Installing Games on Whales ║"
+      echo "╚════════════════════════════╝"
+      cd &script_dir;
+      if ! bash ./install.sh; then
+        echo "error while installing, cleaning up"
+        rm -rf &plugin;
+        exit 1
+      else
+        echo "success!"
+      fi
+    </INLINE>
+  </FILE>
+
+  <FILE Run="/bin/bash" Method="remove">
+    <INLINE>
+      echo "╔══════════════════════════════╗"
+      echo "║ Uninstalling Games on Whales ║"
+      echo "╚══════════════════════════════╝"
+      cd &script_dir;
+      bash &script_dir;/uninstall.sh || echo "couldn't run uninstaller"
+      rm -rf &plugin;
+    </INLINE>
+  </FILE>
+</PLUGIN>
