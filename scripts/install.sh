@@ -87,9 +87,11 @@ function install_pkg() {
 }
 
 function start_pkg() {
-    PACKAGE_NAME=$(pkg_name "$1")
+    # strip everything before the first slash. start/stop scripts are versioned
+    # with the plugin, so they don't need the version in their filename.
+    NAME=${1#*/}
 
-    START_SCRIPT="$GOW_PLUGIN/scripts/start/$PACKAGE_NAME.sh"
+    START_SCRIPT="$GOW_PLUGIN/scripts/start/$NAME.sh"
 
     if [ -f "$START_SCRIPT" ]; then
         bash "$START_SCRIPT"
