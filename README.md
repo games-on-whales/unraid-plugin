@@ -11,14 +11,9 @@ that we don't know how to help you fix.
 
 ## Installation
 
-The plugin is not published yet, you'll have to install it manually. Open a terminal and clone the project
+Head over the `PLUGINS` page on Unraid, `Install Plugin` tab, paste:
 ```
-git clone https://github.com/games-on-whales/unraid-plugin
-```
-
-Then head over the `PLUGINS` page on Unraid, `Install Plugin` tab, paste:
-```
-/root/unraid-plugin/gow.plg
+https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/gow.plg
 ```
 and press `INSTALL`
 
