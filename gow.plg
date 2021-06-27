@@ -1,21 +1,20 @@
 <?xml version="1.0" standalone="yes"?>
 <!DOCTYPE PLUGIN [
 <!ENTITY name "gow">
-<!ENTITY prettyname "Games on Whales">
 <!ENTITY author "zb140">
 <!ENTITY org "games-on-whales">
-<!ENTITY version "2021.06.26">
+<!ENTITY version "2021.06.27">
 <!ENTITY launch "Settings/gow">
 <!ENTITY gitURL "https://github.com/&org;/unraid-plugin/raw/main">
 <!ENTITY gitPkgURL "https://github.com/&org;/unraid-plugin/raw/&version;">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
 <!ENTITY plugin "/boot/config/plugins/&name;">
 <!ENTITY emhttp "/usr/local/emhttp/plugins/&name;">
-<!ENTITY script_dir "&plugin;/scripts/&version;">
+<!ENTITY script_dir "&plugin;/scripts">
 ]>
 
 <PLUGIN
-  name="&prettyname;"
+  name="&name;"
   author="&org;"
   version="&version;"
   launch="&launch;"
@@ -26,6 +25,10 @@
   >
 
   <CHANGES>
+### 2021.06.27
+- Fix permissions for /dev/uinput
+- Minor UI fixes
+
 ### 2021.06.26
 - Initial version
   </CHANGES>
@@ -60,13 +63,13 @@ export GOW_PACKAGES="kernel/uinput common/settings-ui"
   <!-- Bash script to download and install the drivers and utilities -->
   <FILE Name="&script_dir;/install.sh">
     <URL>&gitPkgURL;/scripts/install.sh</URL>
-    <MD5>c6b465b02b1e53717c8208f8933c95ad</MD5>
+    <MD5>a1473d06824258830910d7d6114c898b</MD5>
   </FILE>
 
   <!-- Bash script to uninstall -->
   <FILE Name="&script_dir;/uninstall.sh">
     <URL>&gitPkgURL;/scripts/uninstall.sh</URL>
-    <MD5>f02dfc24bf678b7816f5f2caeca5bb19</MD5>
+    <MD5>35b89b5253514e8896b53f76bd6d56cc</MD5>
   </FILE>
 
   <FILE Run="/bin/bash">

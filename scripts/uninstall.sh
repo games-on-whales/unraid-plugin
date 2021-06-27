@@ -21,9 +21,11 @@ function pkg_file() {
 }
 
 function stop_pkg() {
-    PACKAGE_NAME=$(pkg_name "$1")
+    # strip everything before the first slash. start/stop scripts are versioned
+    # with the plugin, so they don't need the version in their filename.
+    NAME=${1#*/}
 
-    STOP_SCRIPT="$GOW_PLUGIN/scripts/stop/$PACKAGE_NAME.sh"
+    STOP_SCRIPT="$GOW_PLUGIN/scripts/stop/$NAME.sh"
 
     if [ -f "$STOP_SCRIPT" ]; then
         bash "$STOP_SCRIPT"
