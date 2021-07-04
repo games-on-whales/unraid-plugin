@@ -32,6 +32,7 @@ jobs:
         run: |
           mkdir output
           cd ${{ github.workspace }}/packages/uinput/root/
+          chmod +x ${{ github.workspace }}/utils/fmakepkg.sh
           ${{ github.workspace }}/utils/fmakepkg.sh ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz
 
       - name: Upload kernel modules for ${{ matrix.unraid_version }} - ${{ steps.kernel-version.outputs.kernel }}
