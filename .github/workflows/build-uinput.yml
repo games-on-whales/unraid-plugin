@@ -44,7 +44,7 @@ jobs:
       - name: Download all built kernel modules
         uses: actions/download-artifact@v2
         with:
-          path: ${{ github.workspace }}/kernel-bin/
+          path: ${{ github.workspace }}/packages/uinput/root/lib/modules/
 
       - name: create pull request
         uses: peter-evans/create-pull-request@v3
