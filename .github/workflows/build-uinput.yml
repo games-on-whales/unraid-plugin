@@ -38,11 +38,13 @@ jobs:
     needs: docker-build
     runs-on: ubuntu-latest
     steps:
-      - name: push built files
-        run: |
-          git config --global user.name "GOWBot"
-          git config --global user.email "GOWBot"
-
-          git add ${{ github.workspace }}/kernel-bin/
-          git commit -m "Actions: built kernel files for commit: ${{ github.sha }}"
-          git push
+      - name: create pull request
+        uses: peter-evans/create-pull-request@v3
+        with:
+          committer: GOWBot <gowbot@users.noreply.github.com>
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          signoff: false
+          branch: kernel-build
+          delete-branch: true
+          title: 'Generated kernel modules'
+          body: 'Review the output modules and merge if everything looks fine.'
