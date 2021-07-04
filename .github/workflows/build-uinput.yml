@@ -26,7 +26,7 @@ jobs:
     
       - name: get built kernel version
         id: kernel-version
-        run: echo "::set-output name=kernel::$(ls ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/lib/modules/)"
+        run: echo "::set-output name=kernel::$(ls ${{ github.workspace }}/packages/uinput/root/lib/modules/)"
 
       - name: make kernel package
         run: |
@@ -43,7 +43,7 @@ jobs:
 
       - name: generate checksum
         id: checksum
-        run: md5sum ${{ github.workspace }}/uinput.txz > ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
+        run: md5sum ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz > ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
 
       - name: Upload checksum for ${{ steps.kernel-version.outputs.kernel }}
         uses: actions/upload-artifact@v2
