@@ -69,3 +69,4 @@ jobs:
           artifacts: "${{ github.workspace }}/*"
           tag: release-${{ steps.date.outputs.date }}
           commit: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
