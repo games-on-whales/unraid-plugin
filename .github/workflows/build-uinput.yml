@@ -7,37 +7,44 @@ on:
   workflow_dispatch:
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      
-      - name: Pull gameonwhales/unraid-module-builder
-        run: docker pull gameonwhales/unraid-module-builder
-
   docker-build:
-    needs: setup
     runs-on: ubuntu-latest
     strategy:
       matrix:
         unraid_version: [6.9.2, 6.9.1, 6.8.3]
     steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
       - uses: addnab/docker-run-action@v3
         with:
           registry: docker.io
           image: gameonwhales/unraid-module-builder:latest
           options: |
-            -v ${{ github.workspace }}/uinput/config:/config
+            -v ${{ github.workspace }}/packages/uinput/config:/config
             -v ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}:/output
             -e UNRAID_VERSION=${{ matrix.unraid_version }}
           shell: bash
           run: /opt/scripts/build.sh
+      
+      - name: Upload kernel modules for ${{ matrix.unraid_version }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.unraid_version }}
+          path: ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/
   
-  git-push:
+  mk-pull-request:
     needs: docker-build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Download all built kernel modules
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ github.workspace }}/kernel-bin/
+
       - name: create pull request
         uses: peter-evans/create-pull-request@v3
         with:
