@@ -1,9 +1,6 @@
 name: build_uinput
 
 on:
-  push:
-    branches:
-      - 'main'
   workflow_dispatch:
 
 jobs:
@@ -27,11 +24,15 @@ jobs:
           shell: bash
           run: /opt/scripts/build.sh
       
+      - name: get built kernel version
+        id: kernel-version
+        run: echo "::set-output name=kernel::$(ls ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/lib/modules/)"
+
       - name: Upload kernel modules for ${{ matrix.unraid_version }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.unraid_version }}
-          path: ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/
+          name: ${{ steps.kernel-version.outputs.kernel }}
+          path: ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/lib/modules/${{ steps.kernel-version.outputs.kernel }}
   
   mk-pull-request:
     needs: docker-build
@@ -50,8 +51,11 @@ jobs:
         with:
           committer: GOWBot <gowbot@users.noreply.github.com>
           author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          assignees: ${{ github.actor }}
           signoff: false
           branch: kernel-build
+          branch-suffix: short-commit-hash
           delete-branch: true
           title: 'Generated kernel modules'
           body: 'Review the output modules and merge if everything looks fine.'
+          commit-message: '[GITHUB ACTIONS]: adding built kernel modules'
