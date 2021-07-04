@@ -1,0 +1,48 @@
+name: build_uinput
+
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      
+      - name: Pull gameonwhales/unraid-module-builder
+        run: docker pull gameonwhales/unraid-module-builder
+
+  docker-build:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        unraid_version: [6.9.2, 6.9.1, 6.8.3]
+    steps:
+      - uses: addnab/docker-run-action@v3
+        with:
+          registry: docker.io
+          image: gameonwhales/unraid-module-builder:latest
+          options: |
+            -v ${{ github.workspace }}/uinput/config:/config
+            -v ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}:/output
+            -e UNRAID_VERSION=${{ matrix.unraid_version }}
+          shell: bash
+          run: /opt/scripts/build.sh
+  
+  git-push:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: push built files
+        run: |
+          git config --global user.name "GOWBot"
+          git config --global user.email "GOWBot"
+
+          git add ${{ github.workspace }}/kernel-bin/
+          git commit -m "Actions: built kernel files for commit: ${{ github.sha }}"
+          git push
