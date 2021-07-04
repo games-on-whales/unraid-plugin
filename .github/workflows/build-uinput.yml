@@ -19,43 +19,54 @@ jobs:
           image: gameonwhales/unraid-module-builder:latest
           options: |
             -v ${{ github.workspace }}/packages/uinput/config:/config
-            -v ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}:/output
+            -v ${{ github.workspace }}/packages/uinput/root/:/output
             -e UNRAID_VERSION=${{ matrix.unraid_version }}
           shell: bash
           run: /opt/scripts/build.sh
-      
+    
       - name: get built kernel version
         id: kernel-version
-        run: echo "::set-output name=kernel::$(ls ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/lib/modules/)"
+        run: echo "::set-output name=kernel::$(ls ${{ github.workspace }}/packages/uinput/root/lib/modules/)"
 
-      - name: Upload kernel modules for ${{ matrix.unraid_version }}
+      - name: make kernel package
+        run: |
+          mkdir output
+          cd ${{ github.workspace }}/packages/uinput/root/
+          chmod +x ${{ github.workspace }}/utils/fmakepkg.sh
+          ${{ github.workspace }}/utils/fmakepkg.sh ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz
+
+      - name: Upload kernel modules for ${{ matrix.unraid_version }} - ${{ steps.kernel-version.outputs.kernel }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ steps.kernel-version.outputs.kernel }}
-          path: ${{ github.workspace }}/kernel-bin/${{ matrix.unraid_version }}/lib/modules/${{ steps.kernel-version.outputs.kernel }}
+          name: uinput-${{ steps.kernel-version.outputs.kernel }}.txz
+          path: ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz
+
+      - name: generate checksum
+        id: checksum
+        run: md5sum ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz > ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
+
+      - name: Upload checksum for ${{ steps.kernel-version.outputs.kernel }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
+          path: ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
   
-  mk-pull-request:
+  release:
     needs: docker-build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
       - name: Download all built kernel modules
         uses: actions/download-artifact@v2
         with:
-          path: ${{ github.workspace }}/packages/uinput/root/lib/modules/
+          path: ${{ github.workspace }}/
 
-      - name: create pull request
-        uses: peter-evans/create-pull-request@v3
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date +'%d-%m-%Y')"
+
+      - uses: ncipollo/release-action@v1
         with:
-          committer: GOWBot <gowbot@users.noreply.github.com>
-          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
-          assignees: ${{ github.actor }}
-          signoff: false
-          branch: kernel-build
-          branch-suffix: short-commit-hash
-          delete-branch: true
-          title: 'Generated kernel modules'
-          body: 'Review the output modules and merge if everything looks fine.'
-          commit-message: '[GITHUB ACTIONS]: adding built kernel modules'
+          artifacts: "${{ github.workspace }}/**/*"
+          tag: release-${{ steps.date.outputs.date }}
+          commit: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
