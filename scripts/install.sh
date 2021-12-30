@@ -28,6 +28,7 @@ function wait_for_network() {
 function pkg_name() {
     PACKAGE_NAME=${1/kernel\//$KERNEL_VER\/}
     PACKAGE_NAME=${PACKAGE_NAME/common\//$GOW_VERSION\/}
+    PACKAGE_NAME=${PACKAGE_NAME/nvidia\//$GOW_VERSION\/}
 
     echo "$PACKAGE_NAME"
 }
@@ -122,6 +123,14 @@ echo "║ Please wait... ║"
 echo "╚════════════════╝"
 
 for pkg in $GOW_PACKAGES; do
+    # if this is an nvidia-specific package and there's no nvidia driver
+    # loaded, skip
+    if [ "$pkg" = nvidia/* ]; then
+        if [ ! -f /proc/driver/nvidia/version ]; then
+            echo "Skipping nvidia package $pkg; no nvidia driver loaded"
+        fi
+    fi
+
     if ensure_pkg "$pkg"; then
         if ! install_pkg "$pkg"; then
             echo "╔═══════╗"

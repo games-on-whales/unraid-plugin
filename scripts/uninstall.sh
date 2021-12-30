@@ -10,6 +10,7 @@ PACKAGE_DIR="$GOW_PLUGIN/packages"
 function pkg_name() {
     PACKAGE_NAME=${1/kernel\//$KERNEL_VER\/}
     PACKAGE_NAME=${PACKAGE_NAME/common\//$GOW_VERSION\/}
+    PACKAGE_NAME=${PACKAGE_NAME/nvidia\//$GOW_VERSION\/}
 
     echo "$PACKAGE_NAME"
 }

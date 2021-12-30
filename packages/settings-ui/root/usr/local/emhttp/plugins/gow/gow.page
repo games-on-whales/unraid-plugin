@@ -2,4 +2,42 @@ Menu="Utilities"
 Title="Games on Whales"
 Icon="gow.png"
 ---
-<h2>Nothing here yet</h2>
+<?php
+define("CONFIG_FILE", "/usr/local/emhttp/plugins/gow/config.json");
+define("DEFAULT_CONFIG", [
+  'auto_fetch_32bit' => true
+]);
+
+function load_config() {
+  $str = file_get_contents(CONFIG_FILE);
+  return json_decode($str, true);
+}
+
+// this is super-naive and just overwrites everything with the posted data.
+// returns the updated config.
+function update_config() {
+  $new_conf = DEFAULT_CONFIG;
+  // booleans only appear in the POST data if they are true, but we want to
+  // store "false" in the config file too.
+  foreach (['auto_fetch_32bit'] as $bool_key) {
+    $new_conf[$bool_key] = isset($_POST[$bool_key]) && ($_POST[$bool_key] === 'on');
+  }
+
+  /*
+  foreach ($_POST as $key => $val) {
+  }
+   */
+
+  file_put_contents(CONFIG_FILE, json_encode($new_conf));
+  return $new_conf;
+}
+
+$config = $_POST["_submitted"] ? update_config() : load_config();
+?>
+
+<form id="s" method="post">
+  <input name="auto_fetch_32bit" type="checkbox" <?= $config['auto_fetch_32bit'] ? 'checked' : ''?> />
+  <label for="auto_fetch_32bit">Automatically fetch 32-bit libraries for Steam use (NVIDIA only)? (requires reboot)
+  <br/>
+  <input type="submit" name="_submitted" value="Save changes" />
+</form>
