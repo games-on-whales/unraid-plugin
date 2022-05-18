@@ -23,7 +23,7 @@ jobs:
             -e UNRAID_VERSION=${{ matrix.unraid_version }}
           shell: bash
           run: /opt/scripts/build.sh
-    
+
       - name: get built kernel version
         id: kernel-version
         run: echo "::set-output name=kernel::$(ls ${{ github.workspace }}/packages/uinput/root/lib/modules/)"
@@ -41,15 +41,25 @@ jobs:
           name: uinput-${{ steps.kernel-version.outputs.kernel }}.txz
           path: ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz
 
-      - name: generate checksum
+      - name: generate checksum (md5)
         id: checksum
         run: md5sum ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz > ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
 
-      - name: Upload checksum for ${{ steps.kernel-version.outputs.kernel }}
+      - name: Upload checksum for ${{ steps.kernel-version.outputs.kernel }} (md5)
         uses: actions/upload-artifact@v2
         with:
           name: uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
           path: ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
+
+      - name: generate checksum (sha256)
+        id: checksum
+        run: sha256sum ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz > ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.sha256
+
+      - name: Upload checksum for ${{ steps.kernel-version.outputs.kernel }} (sha256)
+        uses: actions/upload-artifact@v2
+        with:
+          name: uinput-${{ steps.kernel-version.outputs.kernel }}.txz.sha256
+          path: ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.sha256
 
   release:
     needs: docker-build
@@ -62,7 +72,7 @@ jobs:
 
       - name: Get current date
         id: date
-        run: echo "::set-output name=date::$(date +'%d.%m.%Y')"
+        run: echo "::set-output name=date::$(date +'%Y.%m.%d')"
 
       - uses: ncipollo/release-action@v1
         with:

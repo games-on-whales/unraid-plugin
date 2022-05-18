@@ -1,11 +1,7 @@
 #!/bin/bash
 
 source vars.sh
-
-KV="$(uname -r)"
-KERNEL_VER=${KV%%-*}
-
-PACKAGE_DIR="$GOW_PLUGIN/packages"
+source utils.sh
 
 KERNEL_PKG_DIR="$PACKAGE_DIR/$KERNEL_VER"
 COMMON_PKG_DIR="$PACKAGE_DIR/$GOW_VERSION"
@@ -17,88 +13,46 @@ for dir in $KERNEL_PKG_DIR $COMMON_PKG_DIR; do
 done
 
 function wait_for_network() {
-    HOST=8.8.8.8
+    local host=8.8.8.8
     for i in {1..30}; do
-        ping -c1 $HOST &>/dev/null && return 0
+        ping -c1 $host &>/dev/null && return 0
     done
 
     return 1
 }
 
-function pkg_name() {
-    PACKAGE_NAME=${1/kernel\//$KERNEL_VER\/}
-    PACKAGE_NAME=${PACKAGE_NAME/common\//$GOW_VERSION\/}
-    PACKAGE_NAME=${PACKAGE_NAME/nvidia\//$GOW_VERSION\/}
-
-    echo "$PACKAGE_NAME"
-}
-
-function pkg_file() {
-    PACKAGE_NAME=$(pkg_name "$1")
-
-    echo "$PACKAGE_DIR/$PACKAGE_NAME.txz"
-}
-
-function pkg_url() {
-    name=$1
-    PACKAGE_NAME=$(pkg_name "$name")
-
-    if [[ $name == kernel/* ]]; then
-        echo "$GOW_GITPKGURL/kernel-bin/$PACKAGE_NAME.txz"
-    else
-        echo "https://github.com/games-on-whales/unraid-plugin/releases/download/$PACKAGE_NAME.txz"
-    fi
-}
-
-function download_pkg() {
-    PACKAGE_FILE=$(pkg_file "$1")
-    PACKAGE_URL=$(pkg_url "$1")
-
-    echo "Downloading $PACKAGE_URL"
-
-    if wget -q -nc --show-progress --progress=bar:force:noscroll -O "$PACKAGE_FILE" "$PACKAGE_URL"; then
-        if [ "$(md5sum "$PACKAGE_FILE" | cut -d ' ' -f1)" != "$(wget -qO- "$PACKAGE_URL.md5" | cut -d ' ' -f1)" ]; then
-            echo "ERROR: Checksum mismatch for $PACKAGE_URL"
-            return 1
-        fi
-    else
-        echo "ERROR: Unable to download $PACKAGE_URL"
-        return 1
-    fi
-}
-
 function ensure_pkg() {
-    PACKAGE_NAME=$1
-    PACKAGE_FILE=$(pkg_file "$PACKAGE_NAME")
+    local package_name=$1
+    local package_file=$(pkg_file "$package_name")
 
     # if it doesn't exist, download it
-    if [ ! -f "$PACKAGE_FILE" ] || [ ! -s "$PACKAGE_FILE" ]; then
-        rm -f "$PACKAGE_FILE"
-        if ! download_pkg "$PACKAGE_NAME"; then
+    if [ ! -f "$package_file" ] || [ ! -s "$package_file" ]; then
+        rm -f "$package_file"
+        if ! download_pkg "$package_name"; then
             return 1
         fi
     fi
 }
 
 function install_pkg() {
-    PACKAGE_FILE=$(pkg_file "$1")
+    local package_file=$(pkg_file "$1")
 
-    echo "Installing: $PACKAGE_FILE"
-    /sbin/installpkg "$PACKAGE_FILE"
+    echo "Installing: $package_file"
+    /sbin/installpkg "$package_file"
 }
 
 function start_pkg() {
     # strip everything before the first slash. start/stop scripts are versioned
     # with the plugin, so they don't need the version in their filename.
-    NAME=${1#*/}
+    local name=${1#*/}
 
-    echo "attempting to start $NAME"
+    echo "attempting to start $name"
 
-    START_SCRIPT="$GOW_PLUGIN/scripts/start/$NAME.sh"
+    local start_script="$GOW_PLUGIN/scripts/start/$name.sh"
 
-    if [ -f "$START_SCRIPT" ]; then
-        echo "executing $START_SCRIPT"
-        bash "$START_SCRIPT"
+    if [ -f "$start_script" ]; then
+        echo "executing $start_script"
+        bash "$start_script"
     fi
 }
 

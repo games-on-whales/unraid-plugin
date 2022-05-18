@@ -1,47 +1,33 @@
 #1/bin/bash
 
 source vars.sh
-
-KV="$(uname -r)"
-KERNEL_VER=${KV%%-*}
-
-PACKAGE_DIR="$GOW_PLUGIN/packages"
-
-function pkg_name() {
-    PACKAGE_NAME=${1/kernel\//$KERNEL_VER\/}
-    PACKAGE_NAME=${PACKAGE_NAME/common\//$GOW_VERSION\/}
-    PACKAGE_NAME=${PACKAGE_NAME/nvidia\//$GOW_VERSION\/}
-
-    echo "$PACKAGE_NAME"
-}
-
-function pkg_file() {
-    PACKAGE_NAME=$(pkg_name "$1")
-
-    echo "$PACKAGE_DIR/$PACKAGE_NAME.txz"
-}
+source utils.sh
 
 function stop_pkg() {
     # strip everything before the first slash. start/stop scripts are versioned
     # with the plugin, so they don't need the version in their filename.
-    NAME=${1#*/}
+    local name=${1#*/}
 
-    STOP_SCRIPT="$GOW_PLUGIN/scripts/stop/$NAME.sh"
+    local stop_script="$GOW_PLUGIN/scripts/stop/$name.sh"
 
-    if [ -f "$STOP_SCRIPT" ]; then
-        bash "$STOP_SCRIPT"
+    if [ -f "$stop_script" ]; then
+        bash "$stop_script"
     fi
 }
 
-for pkg in $GOW_PACKAGES; do
-    PKG_NAME=$(pkg_name "$pkg")
-    PKG_FILE=$(pkg_file "$pkg")
+function main() {
+    for pkg in $GOW_PACKAGES; do
+        local package_name=$(pkg_name "$pkg")
+        local package_file=$(pkg_file "$pkg")
 
-    stop_pkg "$pkg"
+        stop_pkg "$pkg"
 
-    if [ -f "$PKG_FILE" ]; then
-        /sbin/removepkg "$PKG_FILE" 2>/dev/null
-    fi
-done
+        if [ -f "$package_file" ]; then
+            /sbin/removepkg "$package_file" 2>/dev/null
+        fi
+    done
+}
+
+main
 
 exit 0
