@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        unraid_version: [6.10.0, 6.10.0-rc8, 6.9.2]
+        unraid_version: [6.10.2, 6.10.0, 6.10.0-rc8, 6.9.2]
     steps:
       - name: Checkout
         uses: actions/checkout@v2
