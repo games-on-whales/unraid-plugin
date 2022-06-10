@@ -52,7 +52,7 @@ jobs:
           path: ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.md5
 
       - name: generate checksum (sha256)
-        id: checksum
+        id: checksum_sha
         run: sha256sum ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz > ${{ github.workspace }}/output/uinput-${{ steps.kernel-version.outputs.kernel }}.txz.sha256
 
       - name: Upload checksum for ${{ steps.kernel-version.outputs.kernel }} (sha256)
