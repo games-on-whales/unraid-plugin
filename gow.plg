@@ -3,7 +3,7 @@
 <!ENTITY name "gow">
 <!ENTITY author "zb140">
 <!ENTITY org "games-on-whales">
-<!ENTITY version "2022.06.09">
+<!ENTITY version "2022.06.14">
 <!ENTITY launch "Settings/gow">
 <!ENTITY gitURL "https://github.com/&org;/unraid-plugin/raw/main">
 <!ENTITY gitPkgURL "https://github.com/&org;/unraid-plugin/raw/&version;">
@@ -24,11 +24,14 @@
   launch="&launch;"
   pluginURL="&pluginURL;"
   min="6.9.2"
-  max="6.10.2"
+  max="6.10.3"
   support="https://discord.gg/kRGUDHNHt2"
   >
 
   <CHANGES>
+### 2022.06.14
+- Add support for unRAID 6.10.3
+
 ### 2022.06.09
 - Add support for unRAID 6.10.1 and 6.10.2
 
