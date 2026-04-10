@@ -5,8 +5,8 @@
 <!ENTITY org       "games-on-whales">
 <!ENTITY version   "2026.04.10">
 <!ENTITY launch    "Settings/gow">
-<!ENTITY gitURL    "https://github.com/&org;/unraid-plugin/raw/main">
-<!ENTITY gitPkgURL "https://github.com/&org;/unraid-plugin/raw/&version;">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
+<!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
 <!ENTITY plugin    "/boot/config/plugins/&name;">
