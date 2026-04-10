@@ -71,8 +71,8 @@
   <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md) -->
   <FILE Name="&plugin;/packages/settings-ui-&version;.txz">
     <URL>&gitReleaseURL;/settings-ui.txz</URL>
-    <SHA256>49e347ce2b62864fd5a7e9e0ee22151d33cbc944ab793277ebea2c3deb81ff7a</SHA256>
-    <MD5>b6006d96a6fe46eb51eb5ee6bc8d1970</MD5>
+    <SHA256>437963ab89930c6c57cd1594baba7301f856c36009c7482febeaf553da0c9084</SHA256>
+    <MD5>0193a19f317ffa91cf7f58498bba00b4</MD5>
   </FILE>
 
   <!-- Install -->
