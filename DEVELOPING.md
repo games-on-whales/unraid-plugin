@@ -1,111 +1,42 @@
 # Developer How-To
 
-## Overview
-
-The plugin has two installation phases:
-
-1. **Phase 1 (headless, during plugin install)** — `preinstall.sh` runs checks, `install.sh` detects GPUs and writes `/boot/config/plugins/gow/gow.cfg`, and the `settings-ui` package is installed to register the emhttp page.
-2. **Phase 2 (user-triggered, via the settings page)** — the user opens Settings > Games on Whales, picks a GPU and appdata path, and clicks Install. This calls `deploy.sh`, which writes udev rules, generates `docker-compose.yml`, builds the NVIDIA driver volume if needed, and starts Wolf + Wolf Den.
-
 ## Prerequisites
 
-- Unraid 6.12+ (for testing in a VM or bare metal)
-- Unraid installs plugins by fetching files over HTTP, so you need a local HTTP server to serve your development files.
+unRAID installs plugins from an HTTP server, so in order to install your locally-modified version you'll need some way to serve the files over HTTP.  There is no HTTP server included with this distribution, but several popular development environments include an easy way to launch one.
 
-## Serving files locally
+1. NodeJS. This is the one I use.  Just run `npx http-server` in the top level of the plugin repo (the directory that contains this file).  This will serve the files at `http://[your ip address]:8080/`.
+2. Python (3+).  This is untested, but it should work.  Run `python -m http.server 8080` and the files will (should) be available at `http://[your ip address]:8080/`.
 
-From the repo root:
+## Getting Started
 
+Open up [`gow.plg`](gow.plg) and change the `gitPkgURL` entity to point to `http://[your ip address]:8080`. Be sure to use the IP address of the system you're doing the dev work on; this may not necessarily be your unRAID server. It should _not_ end with a trailing slash.  Also change the `gitReleaseURL` entity to `http://[your ip address]:8080/package-dist`. It should likewise have no trailing slash.
+
+The majority of the functionality of this plugin is implemented in various "packages" (see the `packages/` directory); this provides a convenient mechanism to break the work down into manageable chunks with a standardized way of installing, uninstalling, reloading after reboot, etc.
+
+Installing and uninstalling packages is managed by the [`preinstall.sh`](scripts/preinstall.sh), [`install.sh`](scripts/install.sh), and [`uninstall.sh`](scripts/uninstall.sh) scripts.  Any time you modify one of these, you'll need to update the MD5 and SHA256 hashes in [`gow.plg`](gow.plg).  The SHA256 hash takes precedence if both exist, but the MD5 hash is left in for older versions of unRAID. (TODO: it's possible we don't need these anymore)
+
+Now it's time to try installing your development version of the plugin.  Open a terminal on your unRAID server and uninstall the old version of GoW (if you have one installed), then install the new version:
 ```sh
-# Node.js
-npx http-server -p 8888
-
-# Python 3
-python3 -m http.server 8888
+$ plugin remove gow.plg
+$ plugin install http://[your ip address]:8080/gow.plg
 ```
 
-Your files will be available at `http://<your-dev-machine-ip>:8888/`.
+## How to add a new package
 
-## Installing the development version
+1. Create a new directory under `packages/`, let's say `packages/new-pkg`.
+2. In `packages/new-pkg`, add a file called `root/install/slack-desc`.  It's easiest to copy an existing one and modify it.
+3. Build any directory structure you like under `root/`.  Any files you add will be automatically installed in their corresponding places under `/` when the plugin is installed or reloaded after reboot.
+4. If your new package needs to perform any actions on start or stop, add a shell script in `root/boot/config/plugins/gow/scripts/start/new-pkg.sh` or `root/boot/config/plugins/gow/scripts/stop/new-pkg.sh`. `start` corresponds to when the plugin is installed or reloaded after reboot, while `stop` is when the plugin is uninstalled.
 
-Open `gow.plg` and temporarily change `gitPkgURL` to point at your local server:
+## How to build a package
 
-```xml
-<!ENTITY gitPkgURL "http://<your-dev-machine-ip>:8888">
-```
+Packages are built using the [`utils/fmakepkg.sh`](utils/fmakepkg.sh) script.  For the purposes of these steps, we'll assume the name of the package you're building is `your-pkg`.
 
-Also change `gitReleaseURL` to the same base with `/packages/settings-ui/dist`:
+1. Make a directory at the top level called `package-dist` to hold packages while you're working on them.
+2. `cd` to `packages/your-pkg/root`.
+3. Run `../../../utils/fmakepkg.sh ../../../package-dist/your-pkg.txz`.
+4. `cd` to `../../../package-dist`.
+5. Generate `your-pkg.txz.md5` and `your-pkg.txz.sha256`.
+6. Uninstall and reinstall the plugin as above to pick up the new package.
 
-```xml
-<!ENTITY gitReleaseURL "http://<your-dev-machine-ip>:8888/packages/settings-ui/dist">
-```
 
-> Do not commit these changes. Revert before pushing.
-
-Then on your Unraid server:
-
-```sh
-plugin remove gow.plg          # remove any existing version
-plugin install http://<your-dev-machine-ip>:8888/gow.plg
-```
-
-## Script reference
-
-| Script | When it runs | What it does |
-|---|---|---|
-| `preinstall.sh` | Plugin install | Unraid version, Docker, NVIDIA driver plugin, network checks |
-| `install.sh` | Plugin install | GPU detection, writes `gow.cfg`, installs `settings-ui.txz` |
-| `deploy.sh` | User clicks Install in UI | udev rules, appdata dirs, `docker-compose.yml`, containers, boot hooks |
-| `uninstall.sh` | Plugin remove | Stops containers, cleans `/boot/config/go`, removes udev rules |
-| `update.sh` | User clicks Update in UI | `docker compose pull && up -d` |
-| `vars.sh` | Sourced by all scripts | Shared env vars (`GOW_CFG`, `GOW_PLUGIN`, `DEFAULT_APPDATA`, …) |
-
-## Config file
-
-`/boot/config/plugins/gow/gow.cfg` (on the Unraid flash drive, persists across reboots):
-
-```bash
-APPDATA=/mnt/user/appdata/gow
-RENDER_NODE=/dev/dri/renderD128
-GPU_VENDOR=NVIDIA
-GPU_NAME=RTX 3090
-GPU_DRIVER=nvidia
-DEPLOYED=true
-```
-
-`install.sh` creates this file. `gow.page` reads and writes it. `deploy.sh` sources it.
-
-## Building the settings-ui package
-
-The emhttp page (`gow.page`) and its assets are shipped as a Slackware `.txz` package.
-
-```sh
-cd packages/settings-ui/root
-../../../utils/fmakepkg.sh ../../../packages/settings-ui/dist/settings-ui-<version>.txz
-cd ../dist
-sha256sum settings-ui-<version>.txz | awk '{print $1}' > settings-ui-<version>.txz.sha256
-md5sum    settings-ui-<version>.txz | awk '{print $1}' > settings-ui-<version>.txz.md5
-```
-
-Update the `<SHA256>` and `<MD5>` fields in `gow.plg` after each rebuild.
-
-During development, serve the `dist/` directory from your local HTTP server and point `gitReleaseURL` there (see above).
-
-## Releasing
-
-1. Update the `version` entity in `gow.plg` to today's date (`YYYY.MM.DD`).
-2. Update `GOW_VERSION` in `scripts/vars.sh` to match.
-3. Rebuild `settings-ui.txz` (see above) and update the hashes in `gow.plg`.
-4. Commit and push, then create a git tag matching the version:
-   ```sh
-   git tag 2026.04.10
-   git push origin 2026.04.10
-   ```
-5. The `release` GitHub Actions workflow triggers automatically, builds the package, and creates a GitHub release with `settings-ui.txz`, its checksums, and `gow.plg` as release assets.
-
-## Adding a new package
-
-1. Create `packages/<name>/root/` with the desired filesystem layout.
-2. Add `packages/<name>/root/install/slack-desc` (copy an existing one and adapt).
-3. Add any start/stop scripts under `packages/<name>/root/boot/config/plugins/gow/scripts/start/` and `.../stop/`.
-4. Build with `fmakepkg.sh`, add a `<FILE>` entry in `gow.plg`, and install it in `install.sh`.

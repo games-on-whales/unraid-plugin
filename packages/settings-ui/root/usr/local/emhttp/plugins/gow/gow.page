@@ -3,339 +3,41 @@ Title="Games on Whales"
 Icon="gow.png"
 ---
 <?php
-// ── Config ────────────────────────────────────────────────────────────────────
+define("CONFIG_FILE", "/usr/local/emhttp/plugins/gow/config.json");
+define("DEFAULT_CONFIG", [
+  'auto_fetch_32bit' => true
+]);
 
-define('GOW_CFG',        '/boot/config/plugins/gow/gow.cfg');
-define('GOW_SCRIPT_DIR', '/boot/config/plugins/gow/scripts');
-define('DEFAULT_APPDATA','/mnt/user/appdata/gow');
-define('DEPLOY_LOG',     '/tmp/gow-deploy.log');
-
-function load_cfg() {
-    $cfg = [
-        'APPDATA'     => DEFAULT_APPDATA,
-        'RENDER_NODE' => '',
-        'GPU_VENDOR'  => '',
-        'GPU_NAME'    => '',
-        'GPU_DRIVER'  => '',
-        'DEPLOYED'    => 'false',
-    ];
-    if (!file_exists(GOW_CFG)) return $cfg;
-    foreach (file(GOW_CFG, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-        if (strpos($line, '=') === false || $line[0] === '#') continue;
-        [$k, $v] = explode('=', $line, 2);
-        $cfg[trim($k)] = trim($v);
-    }
-    return $cfg;
+function load_config() {
+  $str = file_get_contents(CONFIG_FILE);
+  return json_decode($str, true);
 }
 
-function save_cfg($cfg) {
-    $dir = dirname(GOW_CFG);
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $out = '';
-    foreach ($cfg as $k => $v) $out .= "$k=$v\n";
-    file_put_contents(GOW_CFG, $out);
+// this is super-naive and just overwrites everything with the posted data.
+// returns the updated config.
+function update_config() {
+  $new_conf = DEFAULT_CONFIG;
+  // booleans only appear in the POST data if they are true, but we want to
+  // store "false" in the config file too.
+  foreach (['auto_fetch_32bit'] as $bool_key) {
+    $new_conf[$bool_key] = isset($_POST[$bool_key]) && ($_POST[$bool_key] === 'on');
+  }
+
+  /*
+  foreach ($_POST as $key => $val) {
+  }
+   */
+
+  file_put_contents(CONFIG_FILE, json_encode($new_conf));
+  return $new_conf;
 }
 
-// ── GPU detection ─────────────────────────────────────────────────────────────
-
-function detect_gpus() {
-    $gpus = [];
-    $nodes = glob('/sys/class/drm/renderD*/device/driver') ?: [];
-    foreach ($nodes as $driver_path) {
-        $device_dir  = dirname($driver_path);
-        $render_name = basename(dirname($device_dir));
-        $render_node = "/dev/dri/{$render_name}";
-
-        $driver = is_link($driver_path) ? basename(readlink($driver_path)) : 'unknown';
-        $vendor_map = ['i915' => 'Intel', 'xe' => 'Intel', 'amdgpu' => 'AMD', 'nvidia' => 'NVIDIA'];
-        $vendor = $vendor_map[$driver] ?? "Unknown ($driver)";
-
-        $name = 'Unknown';
-        $pci_slot = '';
-        $real_path = realpath($device_dir);
-        if ($real_path) $pci_slot = basename($real_path);
-        if ($pci_slot) {
-            exec("lspci -s " . escapeshellarg($pci_slot) . " -mm 2>/dev/null", $lspci_out);
-            if (!empty($lspci_out[0])) {
-                // Format: "Slot" "Class" "Vendor" "Device" ...
-                $parts = str_getcsv($lspci_out[0], ' ', '"');
-                if (isset($parts[3])) $name = $parts[3];
-            }
-        }
-
-        $gpus[] = [
-            'node'   => $render_node,
-            'driver' => $driver,
-            'vendor' => $vendor,
-            'name'   => $name,
-            'label'  => "$vendor $name ($render_node)",
-        ];
-    }
-    return $gpus;
-}
-
-// ── Container status ──────────────────────────────────────────────────────────
-
-function container_status($name) {
-    exec("docker inspect --format '{{.State.Status}}' " . escapeshellarg($name) . " 2>/dev/null", $out, $ret);
-    return ($ret === 0 && !empty($out[0])) ? $out[0] : 'not found';
-}
-
-function status_badge($status) {
-    $map = [
-        'running'    => ['green',  '● Running'],
-        'exited'     => ['red',    '● Stopped'],
-        'restarting' => ['orange', '● Restarting'],
-        'not found'  => ['gray',   '○ Not deployed'],
-    ];
-    [$color, $label] = $map[$status] ?? ['gray', "○ $status"];
-    return "<span style='color:{$color};font-weight:bold'>{$label}</span>";
-}
-
-function local_ip() {
-    exec("hostname -I 2>/dev/null", $out);
-    return trim(explode(' ', $out[0] ?? '')[0]);
-}
-
-// ── Action handlers ───────────────────────────────────────────────────────────
-
-$cfg     = load_cfg();
-$message = '';
-$error   = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-
-    if ($action === 'save_and_deploy') {
-        // Validate and persist GPU selection + appdata path
-        $cfg['RENDER_NODE'] = $_POST['render_node'] ?? '';
-        $cfg['APPDATA']     = rtrim($_POST['appdata'] ?? DEFAULT_APPDATA, '/');
-
-        // Look up vendor/name/driver from the selected node
-        $gpus = detect_gpus();
-        foreach ($gpus as $gpu) {
-            if ($gpu['node'] === $cfg['RENDER_NODE']) {
-                $cfg['GPU_VENDOR'] = $gpu['vendor'];
-                $cfg['GPU_NAME']   = $gpu['name'];
-                $cfg['GPU_DRIVER'] = $gpu['driver'];
-                break;
-            }
-        }
-
-        if (empty($cfg['RENDER_NODE'])) {
-            $error = 'Please select a GPU before installing.';
-        } elseif (empty($cfg['GPU_VENDOR'])) {
-            $error = 'Selected GPU not recognised. Please refresh and try again.';
-        } else {
-            save_cfg($cfg);
-            // Run deploy in background; stream to log file
-            $cmd = 'bash ' . GOW_SCRIPT_DIR . '/deploy.sh > ' . DEPLOY_LOG . ' 2>&1';
-            exec("nohup $cmd &");
-            header('Location: /plugins/gow/gow.page?deploying=1');
-            exit;
-        }
-
-    } elseif ($action === 'start') {
-        $compose = $cfg['APPDATA'] . '/docker-compose.yml';
-        exec("docker compose -f " . escapeshellarg($compose) . " up -d 2>&1", $out, $ret);
-        $message = $ret === 0 ? 'Wolf started.' : 'Start failed: ' . implode("\n", $out);
-
-    } elseif ($action === 'stop') {
-        $compose = $cfg['APPDATA'] . '/docker-compose.yml';
-        exec("docker compose -f " . escapeshellarg($compose) . " down 2>&1", $out, $ret);
-        $message = $ret === 0 ? 'Wolf stopped.' : 'Stop failed: ' . implode("\n", $out);
-
-    } elseif ($action === 'update') {
-        exec('bash ' . GOW_SCRIPT_DIR . '/update.sh 2>&1', $out, $ret);
-        $message = $ret === 0 ? 'Update complete.' : 'Update failed: ' . implode("\n", $out);
-
-    } elseif ($action === 'reconfigure') {
-        $cfg['DEPLOYED'] = 'false';
-        save_cfg($cfg);
-        header('Location: /plugins/gow/gow.page');
-        exit;
-    }
-}
-
-// Detect if a deploy is in progress
-$deploying = isset($_GET['deploying']);
-if ($deploying) {
-    // Check if deploy.sh is still running
-    exec("pgrep -f deploy.sh", $pids);
-    if (empty($pids)) {
-        // Reload cfg — DEPLOYED may now be true
-        $cfg = load_cfg();
-        $deploying = false;
-    }
-}
-
-$deployed = ($cfg['DEPLOYED'] === 'true');
-$gpus     = detect_gpus();
-$ip       = local_ip();
+$config = $_POST["_submitted"] ? update_config() : load_config();
 ?>
-<!DOCTYPE html>
-<html>
-<head>
-<style>
-  .gow-wrap      { max-width: 760px; }
-  .gow-card      { background: #1e1e2e; border: 1px solid #333; border-radius: 8px;
-                   padding: 20px 24px; margin-bottom: 16px; }
-  .gow-title     { font-size: 1.2em; font-weight: bold; margin-bottom: 14px;
-                   border-bottom: 1px solid #333; padding-bottom: 8px; }
-  .gow-row       { display: flex; align-items: center; margin-bottom: 10px; gap: 12px; }
-  .gow-label     { min-width: 110px; color: #aaa; }
-  .gow-actions   { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
-  .gow-btn       { padding: 7px 18px; border: none; border-radius: 5px; cursor: pointer;
-                   font-size: 0.95em; font-weight: 600; }
-  .gow-btn-primary  { background: #4CAF50; color: #fff; }
-  .gow-btn-secondary{ background: #555; color: #fff; }
-  .gow-btn-danger   { background: #c0392b; color: #fff; }
-  .gow-btn-link     { background: #2980b9; color: #fff; text-decoration: none;
-                       padding: 7px 18px; border-radius: 5px; font-size: 0.95em; font-weight: 600; }
-  .gow-select, .gow-input { width: 100%; padding: 7px 10px; border-radius: 5px;
-                             border: 1px solid #555; background: #2a2a3e; color: #eee;
-                             font-size: 0.95em; box-sizing: border-box; }
-  .gow-msg       { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
-  .gow-msg.ok    { background: #1a3a1a; border: 1px solid #2e7d32; color: #a5d6a7; }
-  .gow-msg.err   { background: #3a1a1a; border: 1px solid #c62828; color: #ef9a9a; }
-  .gow-log       { background: #111; color: #ccc; font-family: monospace; font-size: 0.85em;
-                   padding: 12px; border-radius: 5px; max-height: 300px; overflow-y: auto;
-                   white-space: pre-wrap; word-break: break-all; }
-  .gow-spinner   { display: inline-block; width: 14px; height: 14px; border: 2px solid #555;
-                   border-top-color: #4CAF50; border-radius: 50%;
-                   animation: spin 0.8s linear infinite; margin-right: 8px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
-<?php if ($deploying): ?>
-<meta http-equiv="refresh" content="3">
-<?php endif; ?>
-</head>
-<body>
-<div class="gow-wrap">
 
-<?php if ($message): ?>
-  <div class="gow-msg ok"><?= htmlspecialchars($message) ?></div>
-<?php endif; ?>
-<?php if ($error): ?>
-  <div class="gow-msg err"><?= htmlspecialchars($error) ?></div>
-<?php endif; ?>
-
-<?php if ($deploying): ?>
-<!-- ── Deploying ─────────────────────────────────────────────────────────── -->
-<div class="gow-card">
-  <div class="gow-title"><span class="gow-spinner"></span> Deploying Wolf + Wolf Den...</div>
-  <p>This may take several minutes, especially on the first run with an NVIDIA GPU.<br>
-     This page will refresh automatically when complete.</p>
-  <?php if (file_exists(DEPLOY_LOG)): ?>
-  <div class="gow-log"><?= htmlspecialchars(file_get_contents(DEPLOY_LOG)) ?></div>
-  <?php endif; ?>
-</div>
-
-<?php elseif ($deployed): ?>
-<!-- ── Dashboard ─────────────────────────────────────────────────────────── -->
-<div class="gow-card">
-  <div class="gow-title">Games on Whales</div>
-
-  <div class="gow-row">
-    <span class="gow-label">Wolf</span>
-    <?= status_badge(container_status('wolf')) ?>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Wolf Den</span>
-    <?= status_badge(container_status('wolf-den')) ?>
-    <?php if (container_status('wolf-den') === 'running'): ?>
-      &nbsp;
-      <a class="gow-btn-link" href="http://<?= htmlspecialchars($ip) ?>:8080" target="_blank">
-        Open Wolf Den &rarr;
-      </a>
-    <?php endif; ?>
-  </div>
-
-  <div class="gow-row" style="margin-top:10px">
-    <span class="gow-label">GPU</span>
-    <span><?= htmlspecialchars($cfg['GPU_VENDOR'] . ' ' . $cfg['GPU_NAME'] . ' (' . $cfg['RENDER_NODE'] . ')') ?></span>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Appdata</span>
-    <span><?= htmlspecialchars($cfg['APPDATA']) ?></span>
-  </div>
-</div>
-
-<div class="gow-card">
-  <div class="gow-title">Actions</div>
-  <div class="gow-actions">
-    <form method="post" style="display:inline">
-      <input type="hidden" name="action" value="start">
-      <button type="submit" class="gow-btn gow-btn-primary">Start</button>
-    </form>
-    <form method="post" style="display:inline">
-      <input type="hidden" name="action" value="stop">
-      <button type="submit" class="gow-btn gow-btn-secondary">Stop</button>
-    </form>
-    <form method="post" style="display:inline">
-      <input type="hidden" name="action" value="update">
-      <button type="submit" class="gow-btn gow-btn-secondary">Update Images</button>
-    </form>
-    <form method="post" style="display:inline">
-      <input type="hidden" name="action" value="reconfigure">
-      <button type="submit" class="gow-btn gow-btn-danger"
-              onclick="return confirm('This will let you change GPU and appdata settings. The stack will be restarted. Continue?')">
-        Reconfigure
-      </button>
-    </form>
-  </div>
-</div>
-
-<?php else: ?>
-<!-- ── Setup form ─────────────────────────────────────────────────────────── -->
-<div class="gow-card">
-  <div class="gow-title">Games on Whales — Setup</div>
-
-  <form method="post">
-    <input type="hidden" name="action" value="save_and_deploy">
-
-    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-      <label class="gow-label" for="render_node">GPU</label>
-      <?php if (empty($gpus)): ?>
-        <p style="color:#ef9a9a">No GPU render devices found at /dev/dri/.
-           Make sure your GPU driver is loaded and try again.</p>
-        <input type="hidden" name="render_node" value="">
-      <?php else: ?>
-        <select name="render_node" id="render_node" class="gow-select">
-          <?php foreach ($gpus as $gpu): ?>
-            <option value="<?= htmlspecialchars($gpu['node']) ?>"
-              <?= ($cfg['RENDER_NODE'] === $gpu['node']) ? 'selected' : '' ?>>
-              <?= htmlspecialchars($gpu['label']) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-      <?php endif; ?>
-    </div>
-
-    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
-      <label class="gow-label" for="appdata">Appdata path</label>
-      <input type="text" name="appdata" id="appdata" class="gow-input"
-             value="<?= htmlspecialchars($cfg['APPDATA']) ?>"
-             placeholder="/mnt/user/appdata/gow">
-    </div>
-
-    <?php if ($cfg['GPU_VENDOR'] === 'NVIDIA'): ?>
-    <p style="color:#ffcc80;margin-top:12px">
-      ⚠ NVIDIA GPU selected. On first install, a driver volume will be built — this can take
-      5–10 minutes. The page will show progress while it runs.
-    </p>
-    <?php endif; ?>
-
-    <div class="gow-actions" style="margin-top:16px">
-      <?php if (!empty($gpus)): ?>
-        <button type="submit" class="gow-btn gow-btn-primary">Install</button>
-      <?php endif; ?>
-    </div>
-  </form>
-</div>
-
-<?php endif; ?>
-
-</div>
-</body>
-</html>
+<form id="s" method="post">
+  <input name="auto_fetch_32bit" type="checkbox" <?= $config['auto_fetch_32bit'] ? 'checked' : ''?> />
+  <label for="auto_fetch_32bit">Automatically fetch 32-bit libraries for Steam use (NVIDIA only)? (requires reboot)
+  <br/>
+  <input type="submit" name="_submitted" value="Save changes" />
+</form>
