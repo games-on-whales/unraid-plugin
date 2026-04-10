@@ -68,36 +68,6 @@ setup_appdata_dirs() {
     chmod 755 "${APPDATA}/wolf-den" "${APPDATA}/covers"
 }
 
-# ── Wolf config.toml ──────────────────────────────────────────────────────────
-
-write_wolf_config() {
-    local cfg_file="${APPDATA}/cfg/config.toml"
-    if [[ -f "$cfg_file" ]]; then
-        info "Wolf config already exists — preserving user edits"
-        return
-    fi
-    info "Writing default Wolf config"
-    cat > "$cfg_file" <<'TOML'
-hostname = "Wolf"
-support_hevc = true
-support_av1 = true
-
-[[profiles]]
-uid = "default"
-
-[[profiles.apps]]
-title = "Steam"
-start_virtual_compositor = true
-
-[profiles.apps.runner]
-type = "docker"
-name = "WolfSteam"
-image = "ghcr.io/games-on-whales/steam:edge"
-mounts = ["/etc/wolf/steam:/home/retro:rw"]
-env = ["PROTON_LOG=1", "RUN_SWAY=true"]
-TOML
-}
-
 # ── Docker Compose ────────────────────────────────────────────────────────────
 
 write_compose_nvidia() {
@@ -277,7 +247,6 @@ fi
 
 install_udev_rules
 setup_appdata_dirs
-write_wolf_config
 write_compose
 
 if [[ "$GPU_VENDOR" == "NVIDIA" ]]; then
