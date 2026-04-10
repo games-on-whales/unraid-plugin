@@ -1,33 +1,51 @@
-#1/bin/bash
+#!/bin/bash
+# uninstall.sh — stop containers, remove boot hooks, clean udev rules
+# Appdata is intentionally left intact (Unraid convention).
 
-source vars.sh
-source utils.sh
+source "$(dirname "$0")/vars.sh"
 
-function stop_pkg() {
-    # strip everything before the first slash. start/stop scripts are versioned
-    # with the plugin, so they don't need the version in their filename.
-    local name=${1#*/}
+info() { echo "==> $*"; }
+warn() { echo "WARN: $*" >&2; }
 
-    local stop_script="$GOW_PLUGIN/scripts/stop/$name.sh"
+GO_SCRIPT="/boot/config/go"
+APPDATA="${DEFAULT_APPDATA}"
 
-    if [ -f "$stop_script" ]; then
-        bash "$stop_script"
+if [[ -f "$GOW_CFG" ]]; then
+    source "$GOW_CFG"
+fi
+
+# Stop Wolf + Wolf Den
+COMPOSE_FILE="${APPDATA}/docker-compose.yml"
+if [[ -f "$COMPOSE_FILE" ]]; then
+    info "Stopping Wolf + Wolf Den"
+    docker compose -f "$COMPOSE_FILE" down 2>/dev/null || warn "Could not stop containers cleanly"
+fi
+
+# Remove marker blocks from /boot/config/go
+remove_go_block() {
+    local marker="$1"
+    if grep -qF "$marker" "$GO_SCRIPT" 2>/dev/null; then
+        info "Removing '${marker}' from /boot/config/go"
+        # Delete from marker line through the following blank line (the block we appended)
+        sed -i "/$(echo "$marker" | sed 's|/|\\/|g')/,/^$/d" "$GO_SCRIPT"
     fi
 }
 
-function main() {
-    for pkg in $GOW_PACKAGES; do
-        local package_name=$(pkg_name "$pkg")
-        local package_file=$(pkg_file "$pkg")
+remove_go_block "# GoW udev rules"
+remove_go_block "# GoW docker-compose"
 
-        stop_pkg "$pkg"
+# Remove udev rules
+info "Removing udev rules"
+rm -f "/etc/udev/rules.d/85-gow-virtual-inputs.rules"
+rm -f "/boot/config/gow-virtual-inputs.rules"
+udevadm control --reload-rules 2>/dev/null || true
 
-        if [ -f "$package_file" ]; then
-            /sbin/removepkg "$package_file" 2>/dev/null
-        fi
-    done
-}
+# Remove settings-ui package
+PKG=$(ls "${GOW_PACKAGE_DIR}"/settings-ui-*.txz 2>/dev/null | tail -1)
+if [[ -n "$PKG" ]]; then
+    info "Removing settings-ui package"
+    /sbin/removepkg "$PKG" 2>/dev/null || warn "Could not remove settings-ui package"
+fi
 
-main
-
+info "Done. Appdata at ${APPDATA} was left intact."
 exit 0
