@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.04.10">
+<!ENTITY version   "2026.04.14">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
@@ -25,6 +25,12 @@
 >
 
   <CHANGES>
+### 2026.04.14
+- Fix white screen when clicking Install (exec blocking + JS redirect)
+- Fix GPU_NAME with spaces breaking bash config sourcing (single-quote values)
+- Fix Wolf v0 config missing uuid causing crash on startup
+- Add wget timeouts to prevent hanging on slow/unreachable GitHub releases
+
 ### 2026.04.10
 - Complete rewrite for Wolf + Wolf Den
 - Deploys Wolf and Wolf Den via Docker Compose
@@ -68,11 +74,10 @@
     <URL>&gitPkgURL;/scripts/update.sh</URL>
   </FILE>
 
-  <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md) -->
+  <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md).
+       SHA256/MD5 are filled in by the release workflow after building the txz. -->
   <FILE Name="&plugin;/packages/settings-ui-&version;.txz">
     <URL>&gitReleaseURL;/settings-ui.txz</URL>
-    <SHA256>437963ab89930c6c57cd1594baba7301f856c36009c7482febeaf553da0c9084</SHA256>
-    <MD5>0193a19f317ffa91cf7f58498bba00b4</MD5>
   </FILE>
 
   <!-- Install -->

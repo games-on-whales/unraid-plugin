@@ -68,6 +68,25 @@ setup_appdata_dirs() {
     chmod 755 "${APPDATA}/wolf-den" "${APPDATA}/covers"
 }
 
+# Wolf v1+ requires a uuid in config.toml. Older auto-generated configs (v0)
+# may be missing it, which causes Wolf to crash on startup.
+ensure_wolf_uuid() {
+    local cfg_file="${APPDATA}/cfg/config.toml"
+    [[ -f "$cfg_file" ]] || return 0   # no existing config — Wolf generates a fresh one
+    if ! grep -q 'uuid' "$cfg_file"; then
+        info "Upgrading Wolf config: adding missing uuid"
+        local uuid
+        uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null) \
+            || uuid=$(printf '%s' "$(date +%s%N)$(hostname)" | md5sum | sed 's/\(.\{8\}\)\(.\{4\}\)\(.\{4\}\)\(.\{4\}\)\(.\{12\}\).*/\1-\2-\3-\4-\5/')
+        if grep -q '^\[server\]' "$cfg_file"; then
+            sed -i '/^\[server\]/a uuid = "'"${uuid}"'"' "$cfg_file"
+        else
+            printf '[server]\nuuid = "%s"\n\n' "${uuid}" | cat - "$cfg_file" > "${cfg_file}.tmp"
+            mv "${cfg_file}.tmp" "$cfg_file"
+        fi
+    fi
+}
+
 # ── Docker Compose ────────────────────────────────────────────────────────────
 
 write_compose_nvidia() {
@@ -247,6 +266,7 @@ fi
 
 install_udev_rules
 setup_appdata_dirs
+ensure_wolf_uuid
 write_compose
 
 if [[ "$GPU_VENDOR" == "NVIDIA" ]]; then

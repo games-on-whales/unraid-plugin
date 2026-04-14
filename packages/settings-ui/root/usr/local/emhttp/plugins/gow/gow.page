@@ -23,7 +23,13 @@ function load_cfg() {
     foreach (file(GOW_CFG, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         if (strpos($line, '=') === false || $line[0] === '#') continue;
         [$k, $v] = explode('=', $line, 2);
-        $cfg[trim($k)] = trim($v);
+        $k = trim($k);
+        $v = trim($v);
+        // Strip single quotes added by save_cfg (e.g. GPU_NAME='...')
+        if (strlen($v) >= 2 && $v[0] === "'" && $v[-1] === "'") {
+            $v = str_replace("'\\''", "'", substr($v, 1, -1));
+        }
+        $cfg[$k] = $v;
     }
     return $cfg;
 }
@@ -32,7 +38,12 @@ function save_cfg($cfg) {
     $dir = dirname(GOW_CFG);
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $out = '';
-    foreach ($cfg as $k => $v) $out .= "$k=$v\n";
+    foreach ($cfg as $k => $v) {
+        // Single-quote values so bash can safely source this file even when
+        // GPU_NAME contains spaces or brackets (e.g. "GeForce RTX 3060 LHR").
+        $quoted = "'" . str_replace("'", "'\\''", $v) . "'";
+        $out .= "$k=$quoted\n";
+    }
     file_put_contents(GOW_CFG, $out);
 }
 
