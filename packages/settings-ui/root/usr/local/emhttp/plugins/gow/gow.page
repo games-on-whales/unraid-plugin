@@ -128,10 +128,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Selected GPU not recognised. Please refresh and try again.';
         } else {
             save_cfg($cfg);
-            // Run deploy in background; stream to log file
-            $cmd = 'bash ' . GOW_SCRIPT_DIR . '/deploy.sh > ' . DEPLOY_LOG . ' 2>&1';
-            exec("nohup $cmd &");
-            header('Location: /plugins/gow/gow.page?deploying=1');
+            // Run deploy in background; stream to log file.
+            // Use < /dev/null to fully detach stdin so PHP's exec() returns
+            // immediately instead of blocking until the child exits.
+            exec('bash ' . GOW_SCRIPT_DIR . '/deploy.sh > ' . DEPLOY_LOG . ' 2>&1 < /dev/null &');
+            // Use JavaScript redirect — PHP header() can be unreliable inside
+            // Unraid's plugin framework when headers have already been sent.
+            echo '<script>window.location.href = window.location.pathname + "?deploying=1";</script>';
             exit;
         }
 
@@ -152,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'reconfigure') {
         $cfg['DEPLOYED'] = 'false';
         save_cfg($cfg);
-        header('Location: /plugins/gow/gow.page');
+        echo '<script>window.location.href = window.location.pathname;</script>';
         exit;
     }
 }
