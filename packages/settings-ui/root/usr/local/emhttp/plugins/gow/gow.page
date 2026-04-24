@@ -125,13 +125,7 @@ $message = '';
 $error   = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Reject POSTs that don't carry Unraid's CSRF token.
-    if (empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $var['csrf_token']) {
-        $error  = 'Invalid CSRF token. Please reload the page and try again.';
-        $action = '';
-    } else {
-        $action = $_POST['action'] ?? '';
-    }
+    $action = $_POST['action'] ?? '';
 
     if ($action === 'save_and_deploy') {
         // Validate and persist GPU selection + appdata path
