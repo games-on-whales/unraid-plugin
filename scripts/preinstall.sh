@@ -30,13 +30,6 @@ check_docker() {
     info "Docker OK"
 }
 
-check_docker_compose() {
-    if ! docker compose version &>/dev/null; then
-        err "Docker Compose is not available. Install the 'Compose Manager' plugin from Community Applications, then try again."
-    fi
-    info "Docker Compose OK"
-}
-
 check_nvidia() {
     local has_nvidia=false has_other=false driver
 
@@ -75,7 +68,6 @@ check_network() {
 
 check_unraid_version
 check_docker
-check_docker_compose
 check_nvidia
 check_network
 

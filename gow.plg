@@ -26,7 +26,7 @@
 
   <CHANGES>
 ### 2026.04.25
-- Require Docker Compose (Compose Manager plugin) at preinstall, matching deploy/start/stop/update dependencies
+- Require the Compose Manager plugin (checked at plg install time) since deploy/start/stop/update all call docker compose
 - Pin container_name to wolf/wolf-den in generated docker-compose.yml so the settings UI status badges report Running instead of Not deployed
 
 ### 2026.04.24
@@ -47,6 +47,22 @@
 - Persistent udev rules and auto-start via /boot/config/go
 - Requires Unraid 6.12+
   </CHANGES>
+
+  <!-- Hard dependency: Compose Manager plugin must be installed first. -->
+  <FILE Run="/bin/bash">
+    <INLINE>
+      if [ ! -f /boot/config/plugins/compose.manager.plg ]; then
+        echo ""
+        echo "-----------------------------------------------------------"
+        echo " &name; has not been installed!"
+        echo " Install the 'Compose Manager' plugin from Community"
+        echo " Applications first, then retry."
+        echo "-----------------------------------------------------------"
+        echo ""
+        exit 1
+      fi
+    </INLINE>
+  </FILE>
 
   <!-- Remove stale packages from previous versions -->
   <FILE Run="/bin/bash">
