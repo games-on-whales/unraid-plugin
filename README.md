@@ -30,6 +30,12 @@ success!
 plugin: gow.plg installed
 ```
 
+## Troubleshooting
+
+See [docs/FAQ.md](docs/FAQ.md). NVIDIA users in particular should read the
+`nvidia_drm.modeset` section before reporting black-screen or crashed-Wolf
+issues.
+
 ## Developer Notes
 
 See [DEVELOPING.md](DEVELOPING.md)
