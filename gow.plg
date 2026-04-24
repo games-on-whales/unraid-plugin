@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.04.14">
+<!ENTITY version   "2026.04.24">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
@@ -25,6 +25,10 @@
 >
 
   <CHANGES>
+### 2026.04.24
+- Add CSRF tokens to all settings UI forms (Unraid webGui rejects POSTs without them)
+- Move plugin page from Utilities to Settings menu to match launch target
+
 ### 2026.04.14
 - Fix white screen when clicking Install (exec blocking + JS redirect)
 - Fix GPU_NAME with spaces breaking bash config sourcing (single-quote values)
