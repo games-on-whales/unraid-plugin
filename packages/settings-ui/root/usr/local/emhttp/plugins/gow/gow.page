@@ -1,4 +1,4 @@
-Menu="Utilities"
+Menu="Settings"
 Title="Games on Whales"
 Icon="gow.png"
 ---
@@ -115,7 +115,13 @@ $message = '';
 $error   = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+    // Reject POSTs that don't carry Unraid's CSRF token.
+    if (empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $var['csrf_token']) {
+        $error  = 'Invalid CSRF token. Please reload the page and try again.';
+        $action = '';
+    } else {
+        $action = $_POST['action'] ?? '';
+    }
 
     if ($action === 'save_and_deploy') {
         // Validate and persist GPU selection + appdata path
@@ -279,18 +285,22 @@ $ip       = local_ip();
   <div class="gow-title">Actions</div>
   <div class="gow-actions">
     <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="start">
       <button type="submit" class="gow-btn gow-btn-primary">Start</button>
     </form>
     <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="stop">
       <button type="submit" class="gow-btn gow-btn-secondary">Stop</button>
     </form>
     <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="update">
       <button type="submit" class="gow-btn gow-btn-secondary">Update Images</button>
     </form>
     <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="reconfigure">
       <button type="submit" class="gow-btn gow-btn-danger"
               onclick="return confirm('This will let you change GPU and appdata settings. The stack will be restarted. Continue?')">
@@ -306,6 +316,7 @@ $ip       = local_ip();
   <div class="gow-title">Games on Whales — Setup</div>
 
   <form method="post">
+    <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
     <input type="hidden" name="action" value="save_and_deploy">
 
     <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px">
