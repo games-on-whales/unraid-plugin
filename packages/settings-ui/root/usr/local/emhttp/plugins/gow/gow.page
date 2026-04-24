@@ -108,6 +108,16 @@ function local_ip() {
     return trim(explode(' ', $out[0] ?? '')[0]);
 }
 
+// Wolf composes through Wayland; on NVIDIA this requires nvidia_drm.modeset=Y
+// or the client gets a black screen. See docs/FAQ.md.
+function nvidia_drm_modeset_ok() {
+    $path = '/sys/module/nvidia_drm/parameters/modeset';
+    if (!is_readable($path)) return false;
+    return trim(@file_get_contents($path)) === 'Y';
+}
+
+define('FAQ_MODESET_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-wayland-support-nvidia_drmmodeset');
+
 // ── Action handlers ───────────────────────────────────────────────────────────
 
 $cfg     = load_cfg();
@@ -253,6 +263,17 @@ $ip       = local_ip();
 
 <?php elseif ($deployed): ?>
 <!-- ── Dashboard ─────────────────────────────────────────────────────────── -->
+<?php if ($cfg['GPU_VENDOR'] === 'NVIDIA' && !nvidia_drm_modeset_ok()): ?>
+  <div class="gow-msg err">
+    <strong>NVIDIA Wayland not enabled.</strong>
+    <code>/sys/module/nvidia_drm/parameters/modeset</code> is not <code>Y</code>,
+    so Wolf will fail to compose or the client will see a black screen. Open
+    <strong>Tools &gt; System Drivers</strong>, set <code>nvidia_drm</code>
+    modeset to <code>1</code>, apply, and reboot.
+    <a href="<?= FAQ_MODESET_URL ?>" target="_blank" style="color:#ef9a9a;text-decoration:underline">Details</a>.
+  </div>
+<?php endif; ?>
+
 <div class="gow-card">
   <div class="gow-title">Games on Whales</div>
 
@@ -348,6 +369,20 @@ $ip       = local_ip();
     <p style="color:#ffcc80;margin-top:12px">
       ⚠ NVIDIA GPU selected. On first install, a driver volume will be built — this can take
       5–10 minutes. The page will show progress while it runs.
+    </p>
+    <?php endif; ?>
+
+    <?php
+      $has_nvidia = false;
+      foreach ($gpus as $g) { if ($g['vendor'] === 'NVIDIA') { $has_nvidia = true; break; } }
+    ?>
+    <?php if ($has_nvidia && !nvidia_drm_modeset_ok()): ?>
+    <p style="color:#ef9a9a;margin-top:12px">
+      ⚠ NVIDIA detected but <code>nvidia_drm.modeset</code> is not enabled. Wolf's
+      Wayland compositor will not work until you set it. Open
+      <strong>Tools &gt; System Drivers</strong>, set <code>nvidia_drm</code>
+      modeset to <code>1</code>, apply, and reboot before installing.
+      <a href="<?= FAQ_MODESET_URL ?>" target="_blank" style="color:#ef9a9a;text-decoration:underline">Details</a>.
     </p>
     <?php endif; ?>
 

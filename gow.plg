@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.04.25">
+<!ENTITY version   "2026.04.26">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
@@ -25,6 +25,9 @@
 >
 
   <CHANGES>
+### 2026.04.26
+- Detect missing nvidia_drm.modeset and warn in the settings UI (setup form + dashboard) with a link to the new FAQ entry; does not modify kernel module parameters automatically
+
 ### 2026.04.25
 - Require the Compose Manager plugin (checked at plg install time) since deploy/start/stop/update all call docker compose
 - Pin container_name to wolf/wolf-den in generated docker-compose.yml so the settings UI status badges report Running instead of Not deployed
