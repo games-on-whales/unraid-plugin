@@ -94,6 +94,7 @@ write_compose_nvidia() {
 services:
   wolf:
     image: ghcr.io/games-on-whales/wolf:stable
+    container_name: wolf
     environment:
       - WOLF_RENDER_NODE=${RENDER_NODE}
       - NVIDIA_DRIVER_VOLUME_NAME=nvidia-driver-vol
@@ -126,6 +127,7 @@ services:
 
   wolf-den:
     image: ghcr.io/games-on-whales/wolf-den:stable
+    container_name: wolf-den
     environment:
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
@@ -151,6 +153,7 @@ write_compose_standard() {
 services:
   wolf:
     image: ghcr.io/games-on-whales/wolf:stable
+    container_name: wolf
     environment:
       - WOLF_RENDER_NODE=${RENDER_NODE}
       - XDG_RUNTIME_DIR=/tmp/sockets
@@ -174,6 +177,7 @@ services:
 
   wolf-den:
     image: ghcr.io/games-on-whales/wolf-den:stable
+    container_name: wolf-den
     environment:
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60

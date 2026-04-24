@@ -27,6 +27,7 @@
   <CHANGES>
 ### 2026.04.25
 - Require Docker Compose (Compose Manager plugin) at preinstall, matching deploy/start/stop/update dependencies
+- Pin container_name to wolf/wolf-den in generated docker-compose.yml so the settings UI status badges report Running instead of Not deployed
 
 ### 2026.04.24
 - Add CSRF tokens to all settings UI forms (Unraid webGui rejects POSTs without them)
