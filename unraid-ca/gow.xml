@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Containers>
+<Plugin>True</Plugin>
+<PluginURL>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/gow.plg</PluginURL>
+<PluginAuthor>Games on Whales</PluginAuthor>
+<Beta>False</Beta>
+<Category>GameServers: MediaApp:Other</Category>
+<Name>Games on Whales</Name>
+<Description>
+Stream games and desktops from your Unraid server to any Moonlight client over your LAN or the internet. Deploys Wolf (the streaming server) and Wolf Den (the on-host launcher UI) via Docker Compose, with a Settings page for picking a GPU, choosing your appdata path, and starting/stopping the stack. Requires Unraid 6.12 or newer and the Compose Manager plugin.
+</Description>
+<Project>https://github.com/games-on-whales/unraid-plugin</Project>
+<Overview>
+Games on Whales lets you run a low-latency game/desktop streaming host on your Unraid server. Connect from any [Moonlight](https://moonlight-stream.org) client, including Steam Deck, Apple TV, mobile, and desktop. The plugin handles the Docker Compose deployment of Wolf and Wolf Den, persists udev rules and an auto-start hook into /boot/config/go, and surfaces configuration through a Settings page under Settings > Games on Whales.
+
+NVIDIA users: please read the FAQ section on `nvidia_drm.modeset` before reporting black-screen issues.
+</Overview>
+<Support>https://forums.unraid.net/forum/61-plugin-support/</Support>
+<Icon>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Icon>
+<Date>2026-04-26</Date>
+<MinVer>6.12.0</MinVer>
+<Requires>
+The "Compose Manager" plugin must be installed first. The plugin install will refuse to proceed without it.
+</Requires>
+<Screenshot>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Screenshot>
+</Containers>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Maintainer>
+<Icon>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Icon>
+<Profile>
+Games on Whales is an open-source project that lets you stream low-latency games and desktops from a server to your other devices over Moonlight. This profile hosts the official Unraid plugin, which deploys Wolf (the streaming server) and Wolf Den (the on-host launcher UI) via Docker Compose with Unraid-friendly defaults.
+</Profile>
+</Maintainer>
