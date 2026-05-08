@@ -42,9 +42,9 @@ function download_file() {
     local file=$2
     local allow_no_hash=${3:-false}
 
-    if wget -q -nc --show-progress --progress=bar:force:noscroll -O "$file" "$url"; then
+    if wget -q -nc --show-progress --progress=bar:force:noscroll --timeout=60 -O "$file" "$url"; then
         # try to get the sha256 sum
-        local sha_sum=$(wget -qO- "$url.sha256" | cut -d ' ' -f1)
+        local sha_sum=$(wget -qO- --timeout=15 "$url.sha256" | cut -d ' ' -f1)
         if [ ! -z "$sha_sum" ]; then
             echo "INFO: using sha256 sum"
             if [ "$(sha256sum "$file" | cut -d ' ' -f1)" != "$sha_sum" ]; then
@@ -53,7 +53,7 @@ function download_file() {
             fi
         else
             # try to get the md5 sum
-            local md5_sum=$(wget -qO- "$url.md5" | cut -d ' ' -f1)
+            local md5_sum=$(wget -qO- --timeout=15 "$url.md5" | cut -d ' ' -f1)
             if [ ! -z "$md5_sum" ]; then
                 echo "INFO: using md5 sum"
                 if [ "$(md5sum "$file" | cut -d ' ' -f1)" != "$md5_sum" ]; then

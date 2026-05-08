@@ -1,147 +1,149 @@
 <?xml version="1.0" standalone="yes"?>
 <!DOCTYPE PLUGIN [
-<!ENTITY name "gow">
-<!ENTITY author "zb140">
-<!ENTITY org "games-on-whales">
-<!ENTITY version "2022.06.14">
-<!ENTITY launch "Settings/gow">
-<!ENTITY gitURL "https://github.com/&org;/unraid-plugin/raw/main">
-<!ENTITY gitPkgURL "https://github.com/&org;/unraid-plugin/raw/&version;">
-<!ENTITY gitReleaseBaseURL "https://github.com/&org;/unraid-plugin/releases/download">
-<!ENTITY gitModReleaseURL "&gitReleaseBaseURL;/modules-&version;">
-<!ENTITY gitReleaseURL "&gitReleaseBaseURL;/&version;">
-<!ENTITY gowGitUrl "https://github.com/&org;/gow/raw/master">
+<!ENTITY name      "gow">
+<!ENTITY author    "games-on-whales">
+<!ENTITY org       "games-on-whales">
+<!ENTITY version   "2026.04.26">
+<!ENTITY launch    "Settings/gow">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
+<!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
+<!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
-<!ENTITY plugin "/boot/config/plugins/&name;">
-<!ENTITY emhttp "/usr/local/emhttp/plugins/&name;">
+<!ENTITY plugin    "/boot/config/plugins/&name;">
+<!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
 <!ENTITY script_dir "&plugin;/scripts">
 ]>
 
 <PLUGIN
   name="&name;"
-  author="&org;"
+  author="&author;"
   version="&version;"
   launch="&launch;"
   pluginURL="&pluginURL;"
-  min="6.9.2"
-  max="6.10.3"
+  min="6.12.0"
   support="https://discord.gg/kRGUDHNHt2"
-  >
+>
 
   <CHANGES>
-### 2022.06.14
-- Add support for unRAID 6.10.3
+### 2026.04.26
+- Detect missing nvidia_drm.modeset and warn in the settings UI (setup form + dashboard) with a link to the new FAQ entry; does not modify kernel module parameters automatically
+- Remove the redundant page-level CSRF check from the settings UI while still passing csrf_token in all POST forms, fixing valid form submissions being rejected
 
-### 2022.06.09
-- Add support for unRAID 6.10.1 and 6.10.2
+### 2026.04.25
+- Require the Compose Manager plugin (checked at plg install time) since deploy/start/stop/update all call docker compose
+- Pin container_name to wolf/wolf-den in generated docker-compose.yml so the settings UI status badges report Running instead of Not deployed
 
-### 2022.05.18
-- Add support for unRAID 6.10.0
+### 2026.04.24
+- Add CSRF tokens to all settings UI forms (Unraid webGui rejects POSTs without them)
+- Move plugin page from Utilities to Settings menu to match launch target
 
-### 2021.12.29
-- Add support for pre-release versions of unRAID
-- Automatically download 32-bit drivers if an NVIDIA card is detected (used for Steam)
+### 2026.04.14
+- Fix white screen when clicking Install (exec blocking + JS redirect)
+- Fix GPU_NAME with spaces breaking bash config sourcing (single-quote values)
+- Fix Wolf v0 config missing uuid causing crash on startup
+- Add wget timeouts to prevent hanging on slow/unreachable GitHub releases
 
-### 2021.06.27a
-- Fix installing after reboot
-
-### 2021.06.27
-- Fix permissions for /dev/uinput
-- Minor UI fixes
-
-### 2021.06.26
-- Initial version
+### 2026.04.10
+- Complete rewrite for Wolf + Wolf Den
+- Deploys Wolf and Wolf Den via Docker Compose
+- GPU picker in the settings UI (multi-GPU support)
+- Configurable appdata path
+- Persistent udev rules and auto-start via /boot/config/go
+- Requires Unraid 6.12+
   </CHANGES>
 
-  <!--
-    Prepare to install the GoW plugin:
-      * create a temp dir to download scripts to
-      * Remove any pre-existing files corresponding to this version
-  -->
+  <!-- Hard dependency: Compose Manager plugin must be installed first. -->
   <FILE Run="/bin/bash">
     <INLINE>
-      rm -f $(ls &plugin;/&name;*.txz 2&gt;/dev/null|grep -v '&version;')
+      if [ ! -f /boot/config/plugins/compose.manager.plg ]; then
+        echo ""
+        echo "-----------------------------------------------------------"
+        echo " &name; has not been installed!"
+        echo " Install the 'Compose Manager' plugin from Community"
+        echo " Applications first, then retry."
+        echo "-----------------------------------------------------------"
+        echo ""
+        exit 1
+      fi
     </INLINE>
   </FILE>
 
-  <!-- create a bash script that includes all the entities as variables, for convenience -->
-  <FILE Name="&script_dir;/vars.sh">
+  <!-- Remove stale packages from previous versions -->
+  <FILE Run="/bin/bash">
     <INLINE>
-export GOW_NAME="&name;"
-export GOW_AUTHOR="&author;":
-export GOW_ORG="&org;"
-export GOW_VERSION="&version;"
-export GOW_LAUNCH="&launch;"
-export GOW_GITURL="&gitURL;"
-export GOW_GITPKGURL="&gitPkgURL;"
-export GOW_GITMODRELEASEURL="&gitModReleaseURL;"
-export GOW_GITRELEASEURL="&gitReleaseURL;"
-export GOW_GITRELEASEBASEURL="&gitReleaseBaseURL;"
-export GOW_GOWGITURL="&gowGitUrl;"
-export GOW_PLUGINURL="&pluginURL;"
-export GOW_PLUGIN="&plugin;"
-export GOW_EMHTTP="&emhttp;"
-export GOW_PACKAGES="kernel/uinput common/settings-ui nvidia/32-bit-drivers"
+      rm -f $(ls &plugin;/packages/settings-ui-*.txz 2>/dev/null | grep -v '&version;') 2>/dev/null || true
     </INLINE>
   </FILE>
-  <!-- Bash script to download and install the drivers and utilities -->
-  <FILE Name="&script_dir;/install.sh">
-    <URL>&gitPkgURL;/scripts/install.sh</URL>
-    <SHA256>0fdebb7e626327fb026c819d18057d8af44e26b80ae56e20f68bf93dfee5affb</SHA256>
-    <MD5>2e399109aa6086706502cdbea5648250</MD5>
+
+  <!-- Scripts: downloaded from the tagged release so hashes match exactly.
+       During development, point gitPkgURL at your local HTTP server (see DEVELOPING.md). -->
+
+  <FILE Name="&script_dir;/vars.sh">
+    <URL>&gitPkgURL;/scripts/vars.sh</URL>
   </FILE>
 
-  <!-- Bash script to check preconditions before installing -->
   <FILE Name="&script_dir;/preinstall.sh">
     <URL>&gitPkgURL;/scripts/preinstall.sh</URL>
-    <SHA256>e7a129f30184a97ab52dfe6552a0758a7552ae3088f75c34f7eee8df1aee96b9</SHA256>
-    <MD5>6d35001f8dc6284b39dfee6c753875dd</MD5>
   </FILE>
 
-  <!-- Bash script to uninstall -->
+  <FILE Name="&script_dir;/install.sh">
+    <URL>&gitPkgURL;/scripts/install.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/deploy.sh">
+    <URL>&gitPkgURL;/scripts/deploy.sh</URL>
+  </FILE>
+
   <FILE Name="&script_dir;/uninstall.sh">
     <URL>&gitPkgURL;/scripts/uninstall.sh</URL>
-    <SHA256>693c3f9dfa8d71aae4053883566b5ecc061d40afa592e16dcdc6af637ad4cb47</SHA256>
-    <MD5>c59b2a488fbe5946b88415216c12e6d1</MD5>
   </FILE>
 
-  <!-- Utilities used by the other scripts -->
-  <FILE Name="&script_dir;/utils.sh">
-    <URL>&gitPkgURL;/scripts/utils.sh</URL>
-    <SHA256>02eb913cb5e26e3de172a5b0e7ea05325d7c2b603b801cde899dd9a3d72910fe</SHA256>
-    <MD5>d385111e4d1ef7b1930942811178b29f</MD5>
+  <FILE Name="&script_dir;/update.sh">
+    <URL>&gitPkgURL;/scripts/update.sh</URL>
   </FILE>
 
+  <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md).
+       SHA256/MD5 are filled in by the release workflow after building the txz. -->
+  <FILE Name="&plugin;/packages/settings-ui-&version;.txz">
+    <URL>&gitReleaseURL;/settings-ui.txz</URL>
+  </FILE>
+
+  <!-- Install -->
   <FILE Run="/bin/bash">
     <INLINE>
-      cd &script_dir;
-      if ! bash ./preinstall.sh; then
-        echo "preconditions not met; not installing"
+      chmod +x &script_dir;/*.sh
+
+      echo "╔══════════════════════════╗"
+      echo "║  Installing GoW Plugin   ║"
+      echo "╚══════════════════════════╝"
+
+      if ! bash &script_dir;/preinstall.sh; then
+        echo "Preconditions not met; aborting installation"
         rm -rf &plugin;
         exit 1
       fi
 
-      if ! bash ./install.sh; then
-        echo "╔════════════════════════════╗"
-        echo "║ Installing Games on Whales ║"
-        echo "╚════════════════════════════╝"
-        echo "error while installing, cleaning up"
+      if ! bash &script_dir;/install.sh; then
+        echo "Installation failed; cleaning up"
         rm -rf &plugin;
         exit 1
-      else
-        echo "success!"
       fi
+
+      echo ""
+      echo "Plugin installed. Open Settings > Games on Whales to complete setup."
     </INLINE>
   </FILE>
 
+  <!-- Removal -->
   <FILE Run="/bin/bash" Method="remove">
     <INLINE>
-      echo "╔══════════════════════════════╗"
-      echo "║ Uninstalling Games on Whales ║"
-      echo "╚══════════════════════════════╝"
-      cd &script_dir;
-      bash &script_dir;/uninstall.sh || echo "couldn't run uninstaller"
+      echo "╔════════════════════════════╗"
+      echo "║  Uninstalling GoW Plugin   ║"
+      echo "╚════════════════════════════╝"
+      bash &script_dir;/uninstall.sh || echo "Uninstaller encountered errors (continuing)"
       rm -rf &plugin;
+      rm -rf &emhttp;
     </INLINE>
   </FILE>
+
 </PLUGIN>
