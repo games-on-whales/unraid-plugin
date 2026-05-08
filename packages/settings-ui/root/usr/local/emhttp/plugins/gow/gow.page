@@ -1,4 +1,4 @@
-Menu="Settings"
+Menu="OtherSettings"
 Title="Games on Whales"
 Icon="gow.png"
 ---
@@ -94,13 +94,13 @@ function container_status($name) {
 
 function status_badge($status) {
     $map = [
-        'running'    => ['green',  '● Running'],
-        'exited'     => ['red',    '● Stopped'],
-        'restarting' => ['orange', '● Restarting'],
-        'not found'  => ['gray',   '○ Not deployed'],
+        'running'    => ['running',    '● Running'],
+        'exited'     => ['stopped',    '● Stopped'],
+        'restarting' => ['restarting', '● Restarting'],
+        'not found'  => ['unknown',    '○ Not deployed'],
     ];
-    [$color, $label] = $map[$status] ?? ['gray', "○ $status"];
-    return "<span style='color:{$color};font-weight:bold'>{$label}</span>";
+    [$cls, $label] = $map[$status] ?? ['unknown', "○ $status"];
+    return "<span class='gow-status-{$cls}'>" . htmlspecialchars($label) . "</span>";
 }
 
 function local_ip() {
@@ -201,34 +201,50 @@ $ip       = local_ip();
 <html>
 <head>
 <style>
+  /* Colours come from Unraid's theme palette so the page tracks the active
+     theme (white / azure / gray / black). See default-color-palette.css and
+     themes/{theme}.css in dynamix for the variable definitions. */
   .gow-wrap      { max-width: 760px; }
-  .gow-card      { background: #1e1e2e; border: 1px solid #333; border-radius: 8px;
+  .gow-card      { background: var(--mild-background-color);
+                   color: var(--text-color);
+                   border: 1px solid var(--border-color); border-radius: 8px;
                    padding: 20px 24px; margin-bottom: 16px; }
   .gow-title     { font-size: 1.2em; font-weight: bold; margin-bottom: 14px;
-                   border-bottom: 1px solid #333; padding-bottom: 8px; }
+                   border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
   .gow-row       { display: flex; align-items: center; margin-bottom: 10px; gap: 12px; }
-  .gow-label     { min-width: 110px; color: #aaa; }
+  .gow-label     { min-width: 110px; color: var(--alt-text-color); }
   .gow-actions   { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
   .gow-btn       { padding: 7px 18px; border: none; border-radius: 5px; cursor: pointer;
                    font-size: 0.95em; font-weight: 600; }
-  .gow-btn-primary  { background: #4CAF50; color: #fff; }
-  .gow-btn-secondary{ background: #555; color: #fff; }
-  .gow-btn-danger   { background: #c0392b; color: #fff; }
-  .gow-btn-link     { background: #2980b9; color: #fff; text-decoration: none;
+  .gow-btn-primary  { background: var(--green-500); color: var(--white); }
+  .gow-btn-secondary{ background: var(--gray-500); color: var(--white); }
+  .gow-btn-danger   { background: var(--red-800);   color: var(--white); }
+  .gow-btn-link     { background: var(--blue-700);  color: var(--white); text-decoration: none;
                        padding: 7px 18px; border-radius: 5px; font-size: 0.95em; font-weight: 600; }
   .gow-select, .gow-input { width: 100%; padding: 7px 10px; border-radius: 5px;
-                             border: 1px solid #555; background: #2a2a3e; color: #eee;
+                             border: 1px solid var(--input-border-color);
+                             background: var(--background-color); color: var(--text-color);
                              font-size: 0.95em; box-sizing: border-box; }
   .gow-msg       { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
-  .gow-msg.ok    { background: #1a3a1a; border: 1px solid #2e7d32; color: #a5d6a7; }
-  .gow-msg.err   { background: #3a1a1a; border: 1px solid #c62828; color: #ef9a9a; }
-  .gow-log       { background: #111; color: #ccc; font-family: monospace; font-size: 0.85em;
+  .gow-msg.ok    { background: var(--green-100); border: 1px solid var(--green-800); color: var(--green-800); }
+  .gow-msg.err   { background: var(--red-100);   border: 1px solid var(--red-800);   color: var(--red-800); }
+  .gow-msg .gow-msg-link { color: inherit; text-decoration: underline; }
+  .gow-warn      { color: var(--orange-300); margin-top: 12px; }
+  .gow-error     { color: var(--red-800);    margin-top: 12px; }
+  .gow-log       { background: var(--background-color); color: var(--text-color);
+                   border: 1px solid var(--border-color);
+                   font-family: monospace; font-size: 0.85em;
                    padding: 12px; border-radius: 5px; max-height: 300px; overflow-y: auto;
                    white-space: pre-wrap; word-break: break-all; }
-  .gow-spinner   { display: inline-block; width: 14px; height: 14px; border: 2px solid #555;
-                   border-top-color: #4CAF50; border-radius: 50%;
+  .gow-spinner   { display: inline-block; width: 14px; height: 14px;
+                   border: 2px solid var(--border-color);
+                   border-top-color: var(--green-500); border-radius: 50%;
                    animation: spin 0.8s linear infinite; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .gow-status-running    { color: var(--green-500); font-weight: bold; }
+  .gow-status-stopped    { color: var(--red-800);   font-weight: bold; }
+  .gow-status-restarting { color: var(--orange-300);font-weight: bold; }
+  .gow-status-unknown    { color: var(--alt-text-color); font-weight: bold; }
 </style>
 <?php if ($deploying): ?>
 <meta http-equiv="refresh" content="3">
@@ -264,7 +280,7 @@ $ip       = local_ip();
     so Wolf will fail to compose or the client will see a black screen. Open
     <strong>Tools &gt; System Drivers</strong>, set <code>nvidia_drm</code>
     modeset to <code>1</code>, apply, and reboot.
-    <a href="<?= FAQ_MODESET_URL ?>" target="_blank" style="color:#ef9a9a;text-decoration:underline">Details</a>.
+    <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
   </div>
 <?php endif; ?>
 
@@ -337,7 +353,7 @@ $ip       = local_ip();
     <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px">
       <label class="gow-label" for="render_node">GPU</label>
       <?php if (empty($gpus)): ?>
-        <p style="color:#ef9a9a">No GPU render devices found at /dev/dri/.
+        <p class="gow-error">No GPU render devices found at /dev/dri/.
            Make sure your GPU driver is loaded and try again.</p>
         <input type="hidden" name="render_node" value="">
       <?php else: ?>
@@ -360,7 +376,7 @@ $ip       = local_ip();
     </div>
 
     <?php if ($cfg['GPU_VENDOR'] === 'NVIDIA'): ?>
-    <p style="color:#ffcc80;margin-top:12px">
+    <p class="gow-warn">
       ⚠ NVIDIA GPU selected. On first install, a driver volume will be built — this can take
       5–10 minutes. The page will show progress while it runs.
     </p>
@@ -371,12 +387,12 @@ $ip       = local_ip();
       foreach ($gpus as $g) { if ($g['vendor'] === 'NVIDIA') { $has_nvidia = true; break; } }
     ?>
     <?php if ($has_nvidia && !nvidia_drm_modeset_ok()): ?>
-    <p style="color:#ef9a9a;margin-top:12px">
+    <p class="gow-error">
       ⚠ NVIDIA detected but <code>nvidia_drm.modeset</code> is not enabled. Wolf's
       Wayland compositor will not work until you set it. Open
       <strong>Tools &gt; System Drivers</strong>, set <code>nvidia_drm</code>
       modeset to <code>1</code>, apply, and reboot before installing.
-      <a href="<?= FAQ_MODESET_URL ?>" target="_blank" style="color:#ef9a9a;text-decoration:underline">Details</a>.
+      <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
     </p>
     <?php endif; ?>
 

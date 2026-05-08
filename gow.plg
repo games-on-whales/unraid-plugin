@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.04.26">
+<!ENTITY version   "2026.05.08">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
@@ -25,6 +25,10 @@
 >
 
   <CHANGES>
+### 2026.05.08
+- Settings page now nests under the User Utilities subsection of Settings (Menu="OtherSettings") instead of appearing as a peer of the top-level Settings categories
+- Restyle the settings page using Unraid's theme palette variables so text and cards render correctly under all four themes (white, azure, gray, black) — fixes invisible text on light themes
+
 ### 2026.04.26
 - Detect missing nvidia_drm.modeset and warn in the settings UI (setup form + dashboard) with a link to the new FAQ entry; does not modify kernel module parameters automatically
 - Remove the redundant page-level CSRF check from the settings UI while still passing csrf_token in all POST forms, fixing valid form submissions being rejected
