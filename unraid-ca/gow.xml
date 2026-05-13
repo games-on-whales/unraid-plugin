@@ -22,5 +22,6 @@ NVIDIA users: please read the FAQ section on `nvidia_drm.modeset` before reporti
 <Requires>
 The "Compose Manager" plugin must be installed first. The plugin install will refuse to proceed without it.
 </Requires>
+<RequiresFile>/boot/config/plugins/compose.manager.plg</RequiresFile>
 <Screenshot>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Screenshot>
 </Containers>
