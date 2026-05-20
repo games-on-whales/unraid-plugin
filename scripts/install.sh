@@ -31,7 +31,7 @@ detect_gpus() {
         name="Unknown"
         pci_slot=$(basename "$(readlink -f "$device_dir")" 2>/dev/null) || true
         if [[ -n "$pci_slot" ]] && command -v lspci &>/dev/null; then
-            name=$(lspci -s "$pci_slot" -mm 2>/dev/null | awk -F'"' '{print $6}') || true
+            name=$(lspci -s "$pci_slot" -mm 2>/dev/null | awk -F'"' 'NF >= 8 {print $8}') || true
             [[ -z "$name" ]] && name="Unknown"
         fi
 

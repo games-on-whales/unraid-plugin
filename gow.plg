@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.08">
+<!ENTITY version   "2026.05.20">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
@@ -25,6 +25,15 @@
 >
 
   <CHANGES>
+### 2026.05.20
+- Fix multi-GPU labels so each render node shows its own `lspci` device name instead of reusing another GPU's name
+- Remove stale NVIDIA driver-volume helper containers and explicitly delete the temporary helper container after populating the volume
+- Mount Wolf Den's writable app data and compatibility-tools directories so database state persists and compatibility tools can be provisioned
+- Keep the settings page in dashboard mode when a compose file or Wolf containers already exist, exposing Start/Stop/Update actions even if the deploy flag was not persisted
+- Let Start/Stop fall back to the fixed container names when an existing stack has no discoverable compose file
+- Show direct Wolf Den and Moonlight pairing URLs in the settings page and deployment output
+- Clarify the NVIDIA `nvidia_drm.modeset` FAQ with the exact Modprobe.d Config File content
+
 ### 2026.05.08
 - Settings page now nests under the User Utilities subsection of Settings (Menu="OtherSettings") instead of appearing as a peer of the top-level Settings categories
 - Restyle the settings page using Unraid's theme palette variables so text and cards render correctly under all four themes (white, azure, gray, black) — fixes invisible text on light themes
