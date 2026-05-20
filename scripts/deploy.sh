@@ -63,9 +63,16 @@ EOF
 
 setup_appdata_dirs() {
     info "Creating appdata directories at ${APPDATA}"
-    mkdir -p "${APPDATA}/cfg" "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/steam"
-    # wolf-den drops privileges via gosu — dirs must be accessible by the container user
-    chmod 755 "${APPDATA}/wolf-den" "${APPDATA}/covers"
+    mkdir -p \
+        "${APPDATA}/cfg" \
+        "${APPDATA}/wolf-den" \
+        "${APPDATA}/covers" \
+        "${APPDATA}/steam" \
+        "${APPDATA}/compatibilitytools.d"
+    # wolf-den drops privileges to UID 1000 via gosu, so its writable dirs
+    # must be accessible before the app starts.
+    chown -R 1000:1000 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d" 2>/dev/null || true
+    chmod 775 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d"
 }
 
 # Wolf v1+ requires a uuid in config.toml. Older auto-generated configs (v0)
@@ -131,10 +138,12 @@ services:
     environment:
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
+      - XDG_DATA_HOME=/app/wolf-den
     volumes:
       - wolf-socket:/tmp/sockets
       - ${APPDATA}/wolf-den:/app/wolf-den
       - ${APPDATA}/covers:/etc/wolf/covers
+      - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
     ports:
       - "8080:8080"
     depends_on:
@@ -181,10 +190,12 @@ services:
     environment:
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
+      - XDG_DATA_HOME=/app/wolf-den
     volumes:
       - wolf-socket:/tmp/sockets
       - ${APPDATA}/wolf-den:/app/wolf-den
       - ${APPDATA}/covers:/etc/wolf/covers
+      - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
     ports:
       - "8080:8080"
     depends_on:
@@ -227,6 +238,7 @@ detect_nvidia_version() {
 build_nvidia_volume() {
     detect_nvidia_version
     info "NVIDIA driver version: ${NV_VERSION}"
+    cleanup_nvidia_driver_containers
 
     if docker volume inspect nvidia-driver-vol &>/dev/null; then
         info "NVIDIA driver volume already exists — skipping build"
@@ -239,11 +251,25 @@ build_nvidia_volume() {
         | docker build -t gow/nvidia-driver:latest -f - \
             --build-arg NV_VERSION="${NV_VERSION}" .
 
-    docker create --rm \
+    local cid
+    cid=$(docker create \
+        --label org.games-on-whales.unraid-plugin=nvidia-driver-volume \
         --mount source=nvidia-driver-vol,destination=/usr/nvidia \
-        gow/nvidia-driver:latest sh
+        gow/nvidia-driver:latest sh)
+    docker rm "$cid" >/dev/null
 
     info "NVIDIA driver volume ready"
+}
+
+cleanup_nvidia_driver_containers() {
+    local ids
+    ids=$(docker ps -aq \
+        --filter "ancestor=gow/nvidia-driver:latest" \
+        --filter "status=created" 2>/dev/null || true)
+    if [[ -n "$ids" ]]; then
+        info "Removing stale NVIDIA driver volume helper containers"
+        docker rm $ids >/dev/null 2>&1 || true
+    fi
 }
 
 # ── Boot persistence ──────────────────────────────────────────────────────────
@@ -295,11 +321,12 @@ cat <<EOF
 Games on Whales deployed successfully.
 
   Wolf Den:  http://${LOCAL_IP:-<HOST_IP>}:8080
+  Pairing:   http://${LOCAL_IP:-<HOST_IP>}:8080/Clients/Pairing
   Appdata:   ${APPDATA}
   GPU:       ${GPU_VENDOR} ${GPU_NAME:-} (${RENDER_NODE})
 
 To pair with Moonlight:
-  1. Open Wolf Den at http://${LOCAL_IP:-<HOST_IP>}:8080
+  1. Open Wolf Den pairing at http://${LOCAL_IP:-<HOST_IP>}:8080/Clients/Pairing
   2. Add this server in Moonlight: ${LOCAL_IP:-<HOST_IP>}
   3. Enter the PIN shown in Moonlight into Wolf Den
 ================================================================

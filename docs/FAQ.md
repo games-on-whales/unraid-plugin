@@ -20,8 +20,20 @@ is off.
 
 1. Open **Tools > System Drivers** in the Unraid webGui.
 2. Find `nvidia_drm` in the driver list.
-3. Set the `modeset` parameter to `1` (or `Y`).
-4. Apply the change and reboot so the module reloads with the new parameter.
+3. Click the edit/config action for that row.
+4. In **Modprobe.d Config File**, enter exactly:
+
+   ```text
+   options nvidia_drm modeset=1
+   ```
+
+5. Apply the change and reboot so the module reloads with the new parameter.
+
+Unraid persists that editor content under
+`/boot/config/modprobe.d/nvidia_drm.conf` and copies it into `/etc/modprobe.d`
+at boot. If you prefer editing `syslinux.cfg`, the equivalent kernel command
+line option is `nvidia-drm.modeset=1`; do not put that kernel-command-line form
+inside the Modprobe.d Config File editor.
 
 ### References
 

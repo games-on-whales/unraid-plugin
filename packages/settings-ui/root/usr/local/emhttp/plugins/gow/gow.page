@@ -66,6 +66,7 @@ function detect_gpus() {
         $real_path = realpath($device_dir);
         if ($real_path) $pci_slot = basename($real_path);
         if ($pci_slot) {
+            $lspci_out = [];
             exec("lspci -s " . escapeshellarg($pci_slot) . " -mm 2>/dev/null", $lspci_out);
             if (!empty($lspci_out[0])) {
                 // Format: "Slot" "Class" "Vendor" "Device" ...
@@ -117,6 +118,7 @@ function nvidia_drm_modeset_ok() {
 }
 
 define('FAQ_MODESET_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-wayland-support-nvidia_drmmodeset');
+define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 
 // ── Action handlers ───────────────────────────────────────────────────────────
 
@@ -161,12 +163,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } elseif ($action === 'start') {
         $compose = $cfg['APPDATA'] . '/docker-compose.yml';
-        exec("docker compose -f " . escapeshellarg($compose) . " up -d 2>&1", $out, $ret);
+        if (file_exists($compose)) {
+            exec("docker compose -f " . escapeshellarg($compose) . " up -d 2>&1", $out, $ret);
+        } else {
+            exec("docker start wolf wolf-den 2>&1", $out, $ret);
+        }
         $message = $ret === 0 ? 'Wolf started.' : 'Start failed: ' . implode("\n", $out);
 
     } elseif ($action === 'stop') {
         $compose = $cfg['APPDATA'] . '/docker-compose.yml';
-        exec("docker compose -f " . escapeshellarg($compose) . " down 2>&1", $out, $ret);
+        if (file_exists($compose)) {
+            exec("docker compose -f " . escapeshellarg($compose) . " down 2>&1", $out, $ret);
+        } else {
+            exec("docker stop wolf-den wolf 2>&1", $out, $ret);
+        }
         $message = $ret === 0 ? 'Wolf stopped.' : 'Stop failed: ' . implode("\n", $out);
 
     } elseif ($action === 'update') {
@@ -193,9 +203,15 @@ if ($deploying) {
     }
 }
 
-$deployed = ($cfg['DEPLOYED'] === 'true');
-$gpus     = detect_gpus();
-$ip       = local_ip();
+$gpus            = detect_gpus();
+$ip              = local_ip();
+$wolf_status     = container_status('wolf');
+$wolf_den_status = container_status('wolf-den');
+$compose_file    = $cfg['APPDATA'] . '/docker-compose.yml';
+$has_stack       = file_exists($compose_file) || $wolf_status !== 'not found' || $wolf_den_status !== 'not found';
+$deployed        = ($cfg['DEPLOYED'] === 'true') || $has_stack;
+$wolf_den_url    = $ip ? "http://{$ip}:8080" : '';
+$pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
 ?>
 <!DOCTYPE html>
 <html>
@@ -278,8 +294,9 @@ $ip       = local_ip();
     <strong>NVIDIA Wayland not enabled.</strong>
     <code>/sys/module/nvidia_drm/parameters/modeset</code> is not <code>Y</code>,
     so Wolf will fail to compose or the client will see a black screen. Open
-    <strong>Tools &gt; System Drivers</strong>, set <code>nvidia_drm</code>
-    modeset to <code>1</code>, apply, and reboot.
+    <strong>Tools &gt; System Drivers</strong>, edit <code>nvidia_drm</code>,
+    set the Modprobe.d Config File to <code>options nvidia_drm modeset=1</code>,
+    apply, and reboot.
     <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
   </div>
 <?php endif; ?>
@@ -289,18 +306,31 @@ $ip       = local_ip();
 
   <div class="gow-row">
     <span class="gow-label">Wolf</span>
-    <?= status_badge(container_status('wolf')) ?>
+    <?= status_badge($wolf_status) ?>
   </div>
   <div class="gow-row">
     <span class="gow-label">Wolf Den</span>
-    <?= status_badge(container_status('wolf-den')) ?>
-    <?php if (container_status('wolf-den') === 'running'): ?>
+    <?= status_badge($wolf_den_status) ?>
+    <?php if ($wolf_den_status === 'running' && $wolf_den_url): ?>
       &nbsp;
-      <a class="gow-btn-link" href="http://<?= htmlspecialchars($ip) ?>:8080" target="_blank">
+      <a class="gow-btn-link" href="<?= htmlspecialchars($wolf_den_url) ?>" target="_blank">
         Open Wolf Den &rarr;
+      </a>
+      <a class="gow-btn-link" href="<?= htmlspecialchars($pairing_url) ?>" target="_blank">
+        Pair Moonlight &rarr;
       </a>
     <?php endif; ?>
   </div>
+  <?php if ($wolf_den_url): ?>
+  <div class="gow-row">
+    <span class="gow-label">Wolf Den URL</span>
+    <a href="<?= htmlspecialchars($wolf_den_url) ?>" target="_blank"><?= htmlspecialchars($wolf_den_url) ?></a>
+  </div>
+  <div class="gow-row">
+    <span class="gow-label">Pairing URL</span>
+    <a href="<?= htmlspecialchars($pairing_url) ?>" target="_blank"><?= htmlspecialchars($pairing_url) ?></a>
+  </div>
+  <?php endif; ?>
 
   <div class="gow-row" style="margin-top:10px">
     <span class="gow-label">GPU</span>
@@ -390,8 +420,9 @@ $ip       = local_ip();
     <p class="gow-error">
       ⚠ NVIDIA detected but <code>nvidia_drm.modeset</code> is not enabled. Wolf's
       Wayland compositor will not work until you set it. Open
-      <strong>Tools &gt; System Drivers</strong>, set <code>nvidia_drm</code>
-      modeset to <code>1</code>, apply, and reboot before installing.
+      <strong>Tools &gt; System Drivers</strong>, edit <code>nvidia_drm</code>,
+      set the Modprobe.d Config File to <code>options nvidia_drm modeset=1</code>,
+      apply, and reboot before installing.
       <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
     </p>
     <?php endif; ?>

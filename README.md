@@ -36,7 +36,7 @@ clean rollback if anything goes wrong.
    ```
 
 3. After install completes, open **Settings → Games on Whales** to configure
-   your GPU and appdata path, then click **Deploy**.
+   your GPU and appdata path, then click **Install**.
 
 You should see output like:
 
@@ -58,7 +58,7 @@ The Settings page (**Settings → Games on Whales**) covers:
   passed through to the Wolf container.
 - **Appdata path** — where Wolf and Wolf Den persist their state. Defaults
   to `/mnt/user/appdata/gow`.
-- **Deploy / Start / Stop / Update** — buttons that wrap the underlying
+- **Install / Start / Stop / Update** — buttons that wrap the underlying
   `docker compose` calls so you don't have to drop to the shell.
 
 Persistent udev rules and an auto-start hook are written to
@@ -66,9 +66,15 @@ Persistent udev rules and an auto-start hook are written to
 
 ## Pairing a Moonlight client
 
-Once the stack is running, point your Moonlight client at the Unraid
-server's IP. Wolf will surface a one-time PIN URL on the host; open it in a
-browser, paste the PIN your Moonlight client shows, and you're paired.
+Once the stack is running, open Wolf Den's pairing page:
+
+```text
+http://<UNRAID_IP>:8080/Clients/Pairing
+```
+
+Add the Unraid server in Moonlight, then enter the PIN shown by Moonlight on the
+Wolf Den pairing page. The settings page also shows direct **Open Wolf Den** and
+**Pair Moonlight** links when Wolf Den is running.
 
 ## Troubleshooting
 
