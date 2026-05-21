@@ -25,6 +25,7 @@ WOLF_DEN_PORT="${WOLF_DEN_PORT:-8080}"
 if [[ ! "$WOLF_DEN_PORT" =~ ^[0-9]+$ ]] || (( WOLF_DEN_PORT < 1 || WOLF_DEN_PORT > 65535 )); then
     err "Wolf Den port must be a TCP port between 1 and 65535"
 fi
+WOLF_DEN_LISTEN_URL="http://0.0.0.0:${WOLF_DEN_PORT}"
 
 GO_SCRIPT="/boot/config/go"
 COMPOSE_FILE="${APPDATA}/docker-compose.yml"
@@ -77,6 +78,17 @@ setup_appdata_dirs() {
     # must be accessible before the app starts.
     chown -R 1000:1000 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d" 2>/dev/null || true
     chmod 775 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d"
+}
+
+cleanup_wolf_runtime_containers() {
+    local container
+    for container in WolfPulseAudio; do
+        if docker inspect "$container" &>/dev/null; then
+            info "Removing Wolf runtime container ${container}"
+            docker rm -f "$container" >/dev/null 2>&1 \
+                || warn "Could not remove Wolf runtime container ${container}"
+        fi
+    done
 }
 
 # Wolf v1+ requires a uuid in config.toml. Older auto-generated configs (v0)
@@ -143,13 +155,13 @@ services:
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
+      - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
       - wolf-socket:/tmp/sockets
       - ${APPDATA}/wolf-den:/app/wolf-den
       - ${APPDATA}/covers:/etc/wolf/covers
       - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
-    ports:
-      - "${WOLF_DEN_PORT}:8080"
+    network_mode: host
     depends_on:
       - wolf
     restart: unless-stopped
@@ -195,13 +207,13 @@ services:
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
+      - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
       - wolf-socket:/tmp/sockets
       - ${APPDATA}/wolf-den:/app/wolf-den
       - ${APPDATA}/covers:/etc/wolf/covers
       - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
-    ports:
-      - "${WOLF_DEN_PORT}:8080"
+    network_mode: host
     depends_on:
       - wolf
     restart: unless-stopped
@@ -296,6 +308,7 @@ EOF
 if [[ -f "$COMPOSE_FILE" ]]; then
     info "Stopping existing stack for reconfiguration"
     docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+    cleanup_wolf_runtime_containers
 fi
 
 install_udev_rules

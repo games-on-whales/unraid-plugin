@@ -21,6 +21,11 @@ if [[ -f "$COMPOSE_FILE" ]]; then
     docker compose -f "$COMPOSE_FILE" down 2>/dev/null || warn "Could not stop containers cleanly"
 fi
 
+if docker inspect WolfPulseAudio &>/dev/null; then
+    info "Removing Wolf runtime container WolfPulseAudio"
+    docker rm -f WolfPulseAudio >/dev/null 2>&1 || warn "Could not remove WolfPulseAudio"
+fi
+
 # Remove marker blocks from /boot/config/go
 remove_go_block() {
     local marker="$1"
