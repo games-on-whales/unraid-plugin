@@ -19,8 +19,12 @@ warn() { echo "WARN:  $*" >&2; }
 source "$GOW_CFG"
 
 APPDATA="${APPDATA:-${DEFAULT_APPDATA}}"
+WOLF_DEN_PORT="${WOLF_DEN_PORT:-8080}"
 [[ -n "${RENDER_NODE:-}" ]] || err "No GPU configured. Select a GPU in Settings > Games on Whales."
 [[ -n "${GPU_VENDOR:-}"  ]] || err "GPU vendor not set. Re-run setup in Settings > Games on Whales."
+if [[ ! "$WOLF_DEN_PORT" =~ ^[0-9]+$ ]] || (( WOLF_DEN_PORT < 1 || WOLF_DEN_PORT > 65535 )); then
+    err "Wolf Den port must be a TCP port between 1 and 65535"
+fi
 
 GO_SCRIPT="/boot/config/go"
 COMPOSE_FILE="${APPDATA}/docker-compose.yml"
@@ -145,7 +149,7 @@ services:
       - ${APPDATA}/covers:/etc/wolf/covers
       - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
     ports:
-      - "8080:8080"
+      - "${WOLF_DEN_PORT}:8080"
     depends_on:
       - wolf
     restart: unless-stopped
@@ -197,7 +201,7 @@ services:
       - ${APPDATA}/covers:/etc/wolf/covers
       - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
     ports:
-      - "8080:8080"
+      - "${WOLF_DEN_PORT}:8080"
     depends_on:
       - wolf
     restart: unless-stopped
@@ -320,13 +324,13 @@ cat <<EOF
 ================================================================
 Games on Whales deployed successfully.
 
-  Wolf Den:  http://${LOCAL_IP:-<HOST_IP>}:8080
-  Pairing:   http://${LOCAL_IP:-<HOST_IP>}:8080/Clients/Pairing
+  Wolf Den:  http://${LOCAL_IP:-<HOST_IP>}:${WOLF_DEN_PORT}
+  Pairing:   http://${LOCAL_IP:-<HOST_IP>}:${WOLF_DEN_PORT}/Clients/Pairing
   Appdata:   ${APPDATA}
   GPU:       ${GPU_VENDOR} ${GPU_NAME:-} (${RENDER_NODE})
 
 To pair with Moonlight:
-  1. Open Wolf Den pairing at http://${LOCAL_IP:-<HOST_IP>}:8080/Clients/Pairing
+  1. Open Wolf Den pairing at http://${LOCAL_IP:-<HOST_IP>}:${WOLF_DEN_PORT}/Clients/Pairing
   2. Add this server in Moonlight: ${LOCAL_IP:-<HOST_IP>}
   3. Enter the PIN shown in Moonlight into Wolf Den
 ================================================================

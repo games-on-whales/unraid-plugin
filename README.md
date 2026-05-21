@@ -58,6 +58,8 @@ The Settings page (**Settings → Games on Whales**) covers:
   passed through to the Wolf container.
 - **Appdata path** — where Wolf and Wolf Den persist their state. Defaults
   to `/mnt/user/appdata/gow`.
+- **Wolf Den port** — host port for the Wolf Den web UI. Defaults to `8080`
+  and can be changed if another container already uses that port.
 - **Install / Start / Stop / Update** — buttons that wrap the underlying
   `docker compose` calls so you don't have to drop to the shell.
 
@@ -69,7 +71,7 @@ Persistent udev rules and an auto-start hook are written to
 Once the stack is running, open Wolf Den's pairing page:
 
 ```text
-http://<UNRAID_IP>:8080/Clients/Pairing
+http://<UNRAID_IP>:<WOLF_DEN_PORT>/Clients/Pairing
 ```
 
 Add the Unraid server in Moonlight, then enter the PIN shown by Moonlight on the

@@ -70,6 +70,7 @@ RENDER_NODE=/dev/dri/renderD128
 GPU_VENDOR=NVIDIA
 GPU_NAME=RTX 3090
 GPU_DRIVER=nvidia
+WOLF_DEN_PORT=8080
 DEPLOYED=true
 ```
 
@@ -93,7 +94,7 @@ During development, serve the `dist/` directory from your local HTTP server and 
 
 ## Releasing
 
-1. Update the `version` entity in `gow.plg` to today's date (`YYYY.MM.DD`).
+1. Update the `version` entity in `gow.plg` to today's date (`YYYY.MM.DD`). For same-day hotfixes, append a suffix such as `a`.
 2. Update `GOW_VERSION` in `scripts/vars.sh` to match.
 3. Commit and merge the release change, then create a git tag matching the version:
    ```sh

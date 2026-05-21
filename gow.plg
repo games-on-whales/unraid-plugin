@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.21">
+<!ENTITY version   "2026.05.21a">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,12 @@
 >
 
   <CHANGES>
+### 2026.05.21a
+- Allow same-day hotfix release tags such as `2026.05.21a`
+- Keep the install/update PLG URL on release assets so script downloads resolve from an existing tag
+- Add a configurable Wolf Den host port and use it in Docker Compose, dashboard links, and deploy output
+- Make Reconfigure reopen the setup form even when an existing Wolf stack is present
+
 ### 2026.05.21
 - Point the moving plugin URL at the latest GitHub release asset instead of `main` so Unraid only advertises versions that have a matching `settings-ui.txz` package
 
