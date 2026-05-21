@@ -95,13 +95,12 @@ During development, serve the `dist/` directory from your local HTTP server and 
 
 1. Update the `version` entity in `gow.plg` to today's date (`YYYY.MM.DD`).
 2. Update `GOW_VERSION` in `scripts/vars.sh` to match.
-3. Rebuild `settings-ui.txz` (see above) and update the hashes in `gow.plg`.
-4. Commit and push, then create a git tag matching the version:
+3. Commit and merge the release change, then create a git tag matching the version:
    ```sh
    git tag 2026.04.10
    git push origin 2026.04.10
    ```
-5. The `release` GitHub Actions workflow triggers automatically, builds the package, and creates a GitHub release with `settings-ui.txz`, its checksums, and `gow.plg` as release assets.
+4. The `release` GitHub Actions workflow triggers automatically, builds the package, and creates a GitHub release with `settings-ui.txz`, its checksums, and `gow.plg` as release assets. The moving install/update URL points at that latest release asset, so do not bump `version` without publishing the matching tag.
 
 ## Adding a new package
 

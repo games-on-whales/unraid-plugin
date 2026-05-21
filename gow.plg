@@ -3,12 +3,11 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.20">
+<!ENTITY version   "2026.05.21">
 <!ENTITY launch    "Settings/gow">
-<!ENTITY gitURL    "https://raw.githubusercontent.com/&org;/unraid-plugin/main">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
-<!ENTITY pluginURL "&gitURL;/&name;.plg">
+<!ENTITY pluginURL "https://github.com/&org;/unraid-plugin/releases/latest/download/&name;.plg">
 <!ENTITY plugin    "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
 <!ENTITY script_dir "&plugin;/scripts">
@@ -25,6 +24,9 @@
 >
 
   <CHANGES>
+### 2026.05.21
+- Point the moving plugin URL at the latest GitHub release asset instead of `main` so Unraid only advertises versions that have a matching `settings-ui.txz` package
+
 ### 2026.05.20
 - Fix multi-GPU labels so each render node shows its own `lspci` device name instead of reusing another GPU's name
 - Remove stale NVIDIA driver-volume helper containers and explicitly delete the temporary helper container after populating the volume

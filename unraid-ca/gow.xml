@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Containers>
 <Plugin>True</Plugin>
-<PluginURL>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/gow.plg</PluginURL>
+<PluginURL>https://github.com/games-on-whales/unraid-plugin/releases/latest/download/gow.plg</PluginURL>
 <PluginAuthor>Games on Whales</PluginAuthor>
 <Beta>False</Beta>
 <Category>GameServers: MediaApp:Other</Category>
@@ -17,7 +17,7 @@ NVIDIA users: please read the FAQ section on `nvidia_drm.modeset` before reporti
 </Overview>
 <Support>https://forums.unraid.net/forum/61-plugin-support/</Support>
 <Icon>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Icon>
-<Date>2026-04-26</Date>
+<Date>2026-05-21</Date>
 <MinVer>6.12.0</MinVer>
 <Requires>
 The "Compose Manager" plugin must be installed first. The plugin install will refuse to proceed without it.

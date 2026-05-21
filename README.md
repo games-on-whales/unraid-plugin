@@ -32,7 +32,7 @@ clean rollback if anything goes wrong.
 2. Paste the plugin URL and click **Install**:
 
    ```
-   https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/gow.plg
+   https://github.com/games-on-whales/unraid-plugin/releases/latest/download/gow.plg
    ```
 
 3. After install completes, open **Settings → Games on Whales** to configure
