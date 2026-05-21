@@ -31,7 +31,7 @@ pending CA review" if a reviewer asks.
 **Option B: post in [General](https://forums.unraid.net/forum/77-general/) and
 ask a mod to move it.** General accepts new threads from any registered
 user. Title: `[PLUGIN] Games on Whales`. Body: short blurb, install URL
-(`https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/gow.plg`),
+(`https://github.com/games-on-whales/unraid-plugin/releases/latest/download/gow.plg`),
 link to the GitHub repo, link to [`docs/FAQ.md`](../docs/FAQ.md), and a
 call-out that NVIDIA users need `nvidia_drm.modeset=1`. Once posted, hit
 **Report** on your own first post and ask a moderator to move it to Plugin

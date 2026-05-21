@@ -46,6 +46,8 @@ fi
 # I have put all the code into a function so that others can easily copy
 # and paste it into another script.
 fmakepkg() {
+  METADATA_PRUNE='( -name .codex -o -name .agents )'
+  TAR_EXCLUDES='--exclude=./.codex --exclude=./.agents'
 
   # Handle Slackware's makepkg options
   while [ 0 ]; do
@@ -78,7 +80,7 @@ fmakepkg() {
 
   # Reset permissions and ownership
   if [ "${SETPERMS:-y}" = "y" ]; then
-    find . -type d -exec chmod 755 {} \;
+    find . $METADATA_PRUNE -prune -o -type d -exec chmod 755 {} \;
     # Changing file ownership is an unofficial extension to makepkg
     TAROWNER="--group 0 --owner 0"
   else
@@ -109,9 +111,9 @@ fmakepkg() {
     *) echo "Unknown compression type" >&2 ; exit 1 ;;
   esac
   if [ -x /bin/tar-1.13 ]; then
-    tar-1.13 $TAROWNER -cvvf- . | $cmp > "$1"
+    tar-1.13 $TAR_EXCLUDES $TAROWNER -cvvf- . | $cmp > "$1"
   else
-    tar cvvf - . --format gnu --xform 'sx^\./\(.\)x\1x' --show-stored-names $TAROWNER | $cmp > "$1"
+    tar $TAR_EXCLUDES --format gnu --xform 'sx^\./\(.\)x\1x' --show-stored-names $TAROWNER -cvvf - . | $cmp > "$1"
   fi
   echo "Slackware package \"$1\" created."
 
