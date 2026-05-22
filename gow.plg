@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.21b">
+<!ENTITY version   "2026.05.22">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,12 @@
 >
 
   <CHANGES>
+### 2026.05.22
+- Make plugin boot replay tolerant of Docker, network, and NVIDIA driver services still coming up during Unraid startup
+- Replace the immediate `/boot/config/go` compose start with a retrying autostart hook that waits for Docker and GPU device nodes
+- Generate NVIDIA compose device entries from existing `/dev/nvidia*` nodes so older cards do not fail on absent optional devices
+- Warn when Avahi and Wolf are both bound to UDP 5353, which can make Moonlight mDNS discovery unreliable
+
 ### 2026.05.21b
 - Make Wolf Den listen on the configured host port directly instead of publishing container port `8080`
 - Remove WolfPulseAudio when the plugin stops, reconfigures, or uninstalls the Wolf stack

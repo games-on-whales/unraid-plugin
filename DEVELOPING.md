@@ -53,9 +53,9 @@ plugin install http://<your-dev-machine-ip>:8888/gow.plg
 
 | Script | When it runs | What it does |
 |---|---|---|
-| `preinstall.sh` | Plugin install | Unraid version, Docker, NVIDIA driver plugin, network checks |
+| `preinstall.sh` | Plugin install / boot replay | Unraid version check, plus non-fatal Docker, NVIDIA driver plugin, and network warnings |
 | `install.sh` | Plugin install | GPU detection, writes `gow.cfg`, installs `settings-ui.txz` |
-| `deploy.sh` | User clicks Install in UI | udev rules, appdata dirs, `docker-compose.yml`, containers, boot hooks |
+| `deploy.sh` | User clicks Install in UI | udev rules, appdata dirs, `docker-compose.yml`, containers, retrying boot hook |
 | `uninstall.sh` | Plugin remove | Stops containers, cleans `/boot/config/go`, removes udev rules |
 | `update.sh` | User clicks Update in UI | `docker compose pull && up -d` |
 | `vars.sh` | Sourced by all scripts | Shared env vars (`GOW_CFG`, `GOW_PLUGIN`, `DEFAULT_APPDATA`, …) |

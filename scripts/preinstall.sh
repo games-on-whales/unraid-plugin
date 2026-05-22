@@ -1,5 +1,5 @@
 #!/bin/bash
-# preinstall.sh — precondition checks before installing the GoW plugin
+# preinstall.sh — boot-safe precondition checks before installing the GoW plugin
 
 source "$(dirname "$0")/vars.sh"
 
@@ -25,32 +25,27 @@ check_unraid_version() {
 
 check_docker() {
     if ! docker info &>/dev/null; then
-        err "Docker is not running. Enable Docker in Settings > Docker and try again."
+        warn "Docker is not running yet. Enable Docker before deploying Wolf from the settings page."
+        return
     fi
     info "Docker OK"
 }
 
 check_nvidia() {
-    local has_nvidia=false has_other=false driver
+    local has_nvidia=false driver
 
     for node in /sys/class/drm/renderD*/device/driver; do
         [[ -e "$node" ]] || continue
         driver=$(basename "$(readlink "$node")")
         if [[ "$driver" == "nvidia" ]]; then
             has_nvidia=true
-        else
-            has_other=true
         fi
     done
 
     if [[ "$has_nvidia" == "true" ]]; then
         if [[ ! -f /boot/config/plugins/nvidia-driver.plg ]]; then
-            if [[ "$has_other" == "true" ]]; then
-                warn "NVIDIA GPU detected but the Nvidia-Driver plugin is not installed."
-                warn "If you want to use the NVIDIA GPU with Wolf, install Nvidia-Driver from Community Applications first."
-            else
-                err "NVIDIA GPU detected but the Nvidia-Driver plugin is not installed. Install it from Community Applications and try again."
-            fi
+            warn "NVIDIA GPU detected but the Nvidia-Driver plugin is not installed."
+            warn "If you want to use the NVIDIA GPU with Wolf, install Nvidia-Driver from Community Applications first."
         else
             info "NVIDIA driver plugin OK"
         fi
@@ -59,11 +54,11 @@ check_nvidia() {
 
 check_network() {
     info "Checking network connectivity..."
-    for i in {1..15}; do
-        ping -c1 -W2 ghcr.io &>/dev/null && { info "Network OK"; return 0; }
-        sleep 2
-    done
-    err "Cannot reach ghcr.io after 30 seconds. Check network connectivity."
+    if ping -c1 -W2 ghcr.io &>/dev/null; then
+        info "Network OK"
+    else
+        warn "Cannot reach ghcr.io right now. Image pulls may fail until network connectivity is available."
+    fi
 }
 
 check_unraid_version
