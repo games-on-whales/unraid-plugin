@@ -123,7 +123,20 @@ function nvidia_drm_modeset_ok() {
     return trim(@file_get_contents($path)) === 'Y';
 }
 
+function has_mdns_conflict() {
+    exec("ss -H -ulpn 2>/dev/null", $out);
+    $has_avahi = false;
+    $has_wolf = false;
+    foreach ($out as $line) {
+        if (strpos($line, ':5353') === false) continue;
+        if (strpos($line, 'avahi-daemon') !== false) $has_avahi = true;
+        if (strpos($line, '"wolf"') !== false || strpos($line, 'users:((wolf,') !== false) $has_wolf = true;
+    }
+    return $has_avahi && $has_wolf;
+}
+
 define('FAQ_MODESET_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-wayland-support-nvidia_drmmodeset');
+define('FAQ_MDNS_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#moonlight-discovery-and-mdnsavahi-warnings');
 define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 
 // ── Action handlers ───────────────────────────────────────────────────────────
@@ -225,6 +238,7 @@ $deployed        = !$setup_mode && (($cfg['DEPLOYED'] === 'true') || $has_stack)
 $wolf_den_port   = valid_tcp_port($cfg['WOLF_DEN_PORT']) ? $cfg['WOLF_DEN_PORT'] : '8080';
 $wolf_den_url    = $ip ? "http://{$ip}:{$wolf_den_port}" : '';
 $pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
+$mdns_conflict   = $deployed && has_mdns_conflict();
 ?>
 <!DOCTYPE html>
 <html>
@@ -257,6 +271,8 @@ $pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
   .gow-msg       { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
   .gow-msg.ok    { background: var(--green-100); border: 1px solid var(--green-800); color: var(--green-800); }
   .gow-msg.err   { background: var(--red-100);   border: 1px solid var(--red-800);   color: var(--red-800); }
+  .gow-msg.warn  { background: var(--mild-background-color);
+                   border: 1px solid var(--orange-300); color: var(--text-color); }
   .gow-msg .gow-msg-link { color: inherit; text-decoration: underline; }
   .gow-warn      { color: var(--orange-300); margin-top: 12px; }
   .gow-error     { color: var(--red-800);    margin-top: 12px; }
@@ -311,6 +327,15 @@ $pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
     set the Modprobe.d Config File to <code>options nvidia_drm modeset=1</code>,
     apply, and reboot.
     <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
+  </div>
+<?php endif; ?>
+
+<?php if ($mdns_conflict): ?>
+  <div class="gow-msg warn">
+    <strong>Moonlight discovery conflict detected.</strong>
+    Avahi and Wolf are both listening on UDP 5353, so automatic discovery may be unreliable.
+    Use the pairing link or add this server by IP in Moonlight if it does not appear.
+    <a href="<?= FAQ_MDNS_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
   </div>
 <?php endif; ?>
 

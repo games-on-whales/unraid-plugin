@@ -40,3 +40,30 @@ inside the Modprobe.d Config File editor.
 - Unraid forum thread: https://forums.unraid.net/topic/98978-plugin-nvidia-driver/page/164/#findComment-1425257
 - Short summary: "for Wayland support, you need to set `nvidia_drm` modeset
   in Tools > System Drivers for your driver, then restart."
+
+## Moonlight discovery and mDNS/Avahi warnings
+
+Wolf advertises the Moonlight service with mDNS on UDP port 5353. Unraid also
+commonly runs `avahi-daemon` on the same port. When both are active, Avahi may
+log a warning like:
+
+```text
+Detected another IPv4 mDNS stack running on this host.
+```
+
+This does not normally stop the GoW plugin or Wolf containers from starting,
+but it can make Moonlight automatic discovery unreliable.
+
+### Check
+
+```bash
+ss -ulpn | grep 5353
+```
+
+If the output shows both `avahi-daemon` and `wolf`, discovery may be flaky.
+
+### Workaround
+
+Use the direct pairing URL shown on the GoW settings page, or manually add the
+Unraid server IP in Moonlight. Do not disable Unraid's Avahi service unless you
+understand the impact on other Unraid network discovery features.

@@ -101,6 +101,9 @@ ensure_wolf_uuid() {
 # ── Docker Compose ────────────────────────────────────────────────────────────
 
 write_compose_nvidia() {
+    local nvidia_devices
+    nvidia_devices="$(nvidia_device_entries)"
+
     cat > "$COMPOSE_FILE" <<YAML
 services:
   wolf:
@@ -124,13 +127,7 @@ services:
       - /dev/dri
       - /dev/uinput
       - /dev/uhid
-      - /dev/nvidia-uvm
-      - /dev/nvidia-uvm-tools
-      - /dev/nvidia-caps/nvidia-cap1
-      - /dev/nvidia-caps/nvidia-cap2
-      - /dev/nvidiactl
-      - /dev/nvidia0
-      - /dev/nvidia-modeset
+${nvidia_devices}
     device_cgroup_rules:
       - 'c 13:* rmw'
     network_mode: host
@@ -159,6 +156,19 @@ volumes:
     external: true
   wolf-socket:
 YAML
+}
+
+nvidia_device_entries() {
+    local dev
+    for dev in \
+        /dev/nvidiactl \
+        /dev/nvidia[0-9]* \
+        /dev/nvidia-modeset \
+        /dev/nvidia-uvm \
+        /dev/nvidia-uvm-tools \
+        /dev/nvidia-caps/nvidia-cap*; do
+        [[ -e "$dev" ]] && printf '      - %s\n' "$dev"
+    done
 }
 
 write_compose_standard() {
@@ -280,14 +290,56 @@ cleanup_nvidia_driver_containers() {
 
 install_autostart() {
     local marker="# GoW docker-compose"
-    if ! grep -qF "$marker" "$GO_SCRIPT" 2>/dev/null; then
+    local end_marker="# End GoW docker-compose"
+    local marker_re="${marker//\//\\/}"
+    local end_marker_re="${end_marker//\//\\/}"
+    if grep -qF "$marker" "$GO_SCRIPT" 2>/dev/null; then
+        info "Updating Wolf auto-start in /boot/config/go"
+        if grep -qF "$end_marker" "$GO_SCRIPT" 2>/dev/null; then
+            sed -i "/${marker_re}/,/${end_marker_re}/d" "$GO_SCRIPT"
+        else
+            sed -i "/${marker_re}/,/^$/d" "$GO_SCRIPT"
+        fi
+    else
         info "Adding Wolf auto-start to /boot/config/go"
-        cat >> "$GO_SCRIPT" <<EOF
+    fi
+
+    cat >> "$GO_SCRIPT" <<EOF
 
 ${marker}
-docker compose -f ${COMPOSE_FILE} up -d &
-EOF
+(
+  GOW_COMPOSE_FILE='${COMPOSE_FILE}'
+  GOW_RENDER_NODE='${RENDER_NODE}'
+  GOW_GPU_VENDOR='${GPU_VENDOR}'
+  GOW_AUTOSTART_LOG='/tmp/gow-autostart.log'
+
+  gow_nvidia_gpu_ready() {
+    for dev in /dev/nvidia[0-9]*; do
+      [ -e "\$dev" ] && return 0
+    done
+    return 1
+  }
+
+  gow_devices_ready() {
+    [ -z "\$GOW_RENDER_NODE" ] || [ -e "\$GOW_RENDER_NODE" ] || return 1
+    if [ "\$GOW_GPU_VENDOR" = "NVIDIA" ]; then
+      [ -e /dev/nvidiactl ] && gow_nvidia_gpu_ready && [ -e /dev/nvidia-uvm ] || return 1
     fi
+    return 0
+  }
+
+  for i in \$(seq 1 60); do
+    if docker info >/dev/null 2>&1 && [ -f "\$GOW_COMPOSE_FILE" ] && gow_devices_ready; then
+      docker compose -f "\$GOW_COMPOSE_FILE" up -d >"\$GOW_AUTOSTART_LOG" 2>&1
+      exit
+    fi
+    sleep 5
+  done
+
+  echo "GoW auto-start timed out waiting for Docker, GPU devices, or \$GOW_COMPOSE_FILE" >"\$GOW_AUTOSTART_LOG"
+) &
+${end_marker}
+EOF
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────

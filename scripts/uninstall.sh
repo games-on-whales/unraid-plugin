@@ -26,8 +26,16 @@ remove_go_block() {
     local marker="$1"
     if grep -qF "$marker" "$GO_SCRIPT" 2>/dev/null; then
         info "Removing '${marker}' from /boot/config/go"
-        # Delete from marker line through the following blank line (the block we appended)
-        sed -i "/$(echo "$marker" | sed 's|/|\\/|g')/,/^$/d" "$GO_SCRIPT"
+        # Newer blocks have an explicit end marker; older blocks ended at the
+        # following blank line.
+        local end_marker="# End ${marker#\# }"
+        local marker_re="${marker//\//\\/}"
+        local end_marker_re="${end_marker//\//\\/}"
+        if grep -qF "$end_marker" "$GO_SCRIPT" 2>/dev/null; then
+            sed -i "/${marker_re}/,/${end_marker_re}/d" "$GO_SCRIPT"
+        else
+            sed -i "/${marker_re}/,/^$/d" "$GO_SCRIPT"
+        fi
     fi
 }
 
