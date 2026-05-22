@@ -30,6 +30,10 @@
 - Generate NVIDIA compose device entries from existing `/dev/nvidia*` nodes so older cards do not fail on absent optional devices
 - Warn when Avahi and Wolf are both bound to UDP 5353, which can make Moonlight mDNS discovery unreliable
 
+### 2026.05.21b
+- Make Wolf Den listen on the configured host port directly instead of publishing container port `8080`
+- Remove WolfPulseAudio when the plugin stops, reconfigures, or uninstalls the Wolf stack
+
 ### 2026.05.21a
 - Allow same-day hotfix release tags such as `2026.05.21a`
 - Keep the install/update PLG URL on release assets so script downloads resolve from an existing tag

@@ -115,6 +115,10 @@ function valid_tcp_port($port) {
         && (int)$port >= 1 && (int)$port <= 65535;
 }
 
+function cleanup_wolf_runtime_containers() {
+    exec('docker rm -f WolfPulseAudio >/dev/null 2>&1 || true');
+}
+
 // Wolf composes through Wayland; on NVIDIA this requires nvidia_drm.modeset=Y
 // or the client gets a black screen. See docs/FAQ.md.
 function nvidia_drm_modeset_ok() {
@@ -201,6 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             exec("docker stop wolf-den wolf 2>&1", $out, $ret);
         }
+        cleanup_wolf_runtime_containers();
         $message = $ret === 0 ? 'Wolf stopped.' : 'Stop failed: ' . implode("\n", $out);
 
     } elseif ($action === 'update') {
