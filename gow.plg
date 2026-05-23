@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.22">
+<!ENTITY version   "2026.05.23">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,13 @@
 >
 
   <CHANGES>
+### 2026.05.23
+- Add Wolf network settings to the GUI: host, bridge, or a custom Docker network such as `br0`
+- Publish Wolf's default Moonlight ports when bridge mode is selected
+- Support assigning Wolf a static IPv4 address on a custom Docker network so Moonlight can use a different IP than the Unraid host
+- Pass the static Wolf IP through `WOLF_INTERNAL_IP` so Wolf advertises the selected address to Moonlight
+- Show the configured Wolf network and Moonlight host on the settings dashboard
+
 ### 2026.05.22
 - Make plugin boot replay tolerant of Docker, network, and NVIDIA driver services still coming up during Unraid startup
 - Replace the immediate `/boot/config/go` compose start with a retrying autostart hook that waits for Docker and GPU device nodes

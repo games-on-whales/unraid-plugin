@@ -20,12 +20,47 @@ source "$GOW_CFG"
 
 APPDATA="${APPDATA:-${DEFAULT_APPDATA}}"
 WOLF_DEN_PORT="${WOLF_DEN_PORT:-8080}"
+WOLF_NETWORK_MODE="${WOLF_NETWORK_MODE:-host}"
+WOLF_NETWORK_NAME="${WOLF_NETWORK_NAME:-}"
+WOLF_NETWORK_IPV4="${WOLF_NETWORK_IPV4:-}"
 [[ -n "${RENDER_NODE:-}" ]] || err "No GPU configured. Select a GPU in Settings > Games on Whales."
 [[ -n "${GPU_VENDOR:-}"  ]] || err "GPU vendor not set. Re-run setup in Settings > Games on Whales."
 if [[ ! "$WOLF_DEN_PORT" =~ ^[0-9]+$ ]] || (( WOLF_DEN_PORT < 1 || WOLF_DEN_PORT > 65535 )); then
     err "Wolf Den port must be a TCP port between 1 and 65535"
 fi
 WOLF_DEN_LISTEN_URL="http://0.0.0.0:${WOLF_DEN_PORT}"
+
+valid_network_name() {
+    [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]
+}
+
+valid_ipv4() {
+    local ip="$1" part
+    local -a parts
+    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+    IFS='.' read -r -a parts <<< "$ip"
+    for part in "${parts[@]}"; do
+        (( part >= 0 && part <= 255 )) || return 1
+    done
+}
+
+validate_network_config() {
+    case "$WOLF_NETWORK_MODE" in
+        host|bridge)
+            ;;
+        custom)
+            [[ -n "$WOLF_NETWORK_NAME" ]] || err "Custom Wolf network requires a Docker network name such as br0"
+            valid_network_name "$WOLF_NETWORK_NAME" || err "Wolf network name contains unsupported characters"
+            docker network inspect "$WOLF_NETWORK_NAME" >/dev/null 2>&1 \
+                || err "Docker network '${WOLF_NETWORK_NAME}' was not found"
+            [[ -n "$WOLF_NETWORK_IPV4" ]] || err "Custom Wolf network requires a static IPv4 address"
+            valid_ipv4 "$WOLF_NETWORK_IPV4" || err "Wolf static IPv4 address is invalid"
+            ;;
+        *)
+            err "Wolf network mode must be host, bridge, or custom"
+            ;;
+    esac
+}
 
 GO_SCRIPT="/boot/config/go"
 COMPOSE_FILE="${APPDATA}/docker-compose.yml"
@@ -81,14 +116,12 @@ setup_appdata_dirs() {
 }
 
 cleanup_wolf_runtime_containers() {
-    local container
-    for container in WolfPulseAudio; do
-        if docker inspect "$container" &>/dev/null; then
-            info "Removing Wolf runtime container ${container}"
-            docker rm -f "$container" >/dev/null 2>&1 \
-                || warn "Could not remove Wolf runtime container ${container}"
-        fi
-    done
+    local container="WolfPulseAudio"
+    if docker inspect "$container" &>/dev/null; then
+        info "Removing Wolf runtime container ${container}"
+        docker rm -f "$container" >/dev/null 2>&1 \
+            || warn "Could not remove Wolf runtime container ${container}"
+    fi
 }
 
 # Wolf v1+ requires a uuid in config.toml. Older auto-generated configs (v0)
@@ -112,11 +145,60 @@ ensure_wolf_uuid() {
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
 
+write_wolf_network_env() {
+    if [[ "$WOLF_NETWORK_MODE" == "custom" && -n "$WOLF_NETWORK_IPV4" ]]; then
+        cat <<YAML
+      - WOLF_INTERNAL_IP=${WOLF_NETWORK_IPV4}
+YAML
+    fi
+}
+
+write_wolf_network_service() {
+    case "$WOLF_NETWORK_MODE" in
+        host)
+            cat <<YAML
+    network_mode: ${WOLF_NETWORK_MODE}
+YAML
+            ;;
+        bridge)
+            cat <<YAML
+    ports:
+      - "47984:47984/tcp"
+      - "47989:47989/tcp"
+      - "48010:48010/tcp"
+      - "47999:47999/udp"
+      - "48100:48100/udp"
+      - "48200:48200/udp"
+    network_mode: bridge
+YAML
+            ;;
+        custom)
+            cat <<YAML
+    networks:
+      gow-wolf:
+        ipv4_address: ${WOLF_NETWORK_IPV4}
+YAML
+            ;;
+    esac
+}
+
+write_compose_networks() {
+    [[ "$WOLF_NETWORK_MODE" == "custom" ]] || return 0
+    cat <<YAML
+
+networks:
+  gow-wolf:
+    external: true
+    name: ${WOLF_NETWORK_NAME}
+YAML
+}
+
 write_compose_nvidia() {
     local nvidia_devices
     nvidia_devices="$(nvidia_device_entries)"
 
-    cat > "$COMPOSE_FILE" <<YAML
+    {
+    cat <<YAML
 services:
   wolf:
     image: ghcr.io/games-on-whales/wolf:stable
@@ -127,6 +209,9 @@ services:
       - XDG_RUNTIME_DIR=/tmp/sockets
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+YAML
+    write_wolf_network_env
+    cat <<YAML
     volumes:
       - ${APPDATA}/cfg:/etc/wolf/cfg:rw
       - ${APPDATA}/steam:/etc/wolf/steam:rw
@@ -142,7 +227,9 @@ services:
 ${nvidia_devices}
     device_cgroup_rules:
       - 'c 13:* rmw'
-    network_mode: host
+YAML
+    write_wolf_network_service
+    cat <<YAML
     restart: unless-stopped
 
   wolf-den:
@@ -168,6 +255,8 @@ volumes:
     external: true
   wolf-socket:
 YAML
+    write_compose_networks
+    } > "$COMPOSE_FILE"
 }
 
 nvidia_device_entries() {
@@ -184,7 +273,8 @@ nvidia_device_entries() {
 }
 
 write_compose_standard() {
-    cat > "$COMPOSE_FILE" <<YAML
+    {
+    cat <<YAML
 services:
   wolf:
     image: ghcr.io/games-on-whales/wolf:stable
@@ -194,6 +284,9 @@ services:
       - XDG_RUNTIME_DIR=/tmp/sockets
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+YAML
+    write_wolf_network_env
+    cat <<YAML
     volumes:
       - ${APPDATA}/cfg:/etc/wolf/cfg:rw
       - ${APPDATA}/steam:/etc/wolf/steam:rw
@@ -207,7 +300,9 @@ services:
       - /dev/dri
       - /dev/uinput
       - /dev/uhid
-    network_mode: host
+YAML
+    write_wolf_network_service
+    cat <<YAML
     restart: unless-stopped
 
   wolf-den:
@@ -231,10 +326,12 @@ services:
 volumes:
   wolf-socket:
 YAML
+    write_compose_networks
+    } > "$COMPOSE_FILE"
 }
 
 write_compose() {
-    info "Writing docker-compose.yml for ${GPU_VENDOR}"
+    info "Writing docker-compose.yml for ${GPU_VENDOR} with Wolf network mode ${WOLF_NETWORK_MODE}"
     case "$GPU_VENDOR" in
         NVIDIA)    write_compose_nvidia   ;;
         AMD|Intel) write_compose_standard ;;
@@ -356,6 +453,8 @@ EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+validate_network_config
+
 # Stop existing stack on reconfigure
 if [[ -f "$COMPOSE_FILE" ]]; then
     info "Stopping existing stack for reconfiguration"
@@ -383,6 +482,14 @@ install_autostart
 sed -i "s|^DEPLOYED=.*|DEPLOYED=true|" "$GOW_CFG"
 
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+MOONLIGHT_HOST="${LOCAL_IP:-<HOST_IP>}"
+if [[ "$WOLF_NETWORK_MODE" == "custom" && -n "$WOLF_NETWORK_IPV4" ]]; then
+    MOONLIGHT_HOST="$WOLF_NETWORK_IPV4"
+fi
+NETWORK_LABEL="$WOLF_NETWORK_MODE"
+if [[ "$WOLF_NETWORK_MODE" == "custom" ]]; then
+    NETWORK_LABEL="${WOLF_NETWORK_NAME}${WOLF_NETWORK_IPV4:+ (${WOLF_NETWORK_IPV4})}"
+fi
 
 cat <<EOF
 
@@ -391,12 +498,14 @@ Games on Whales deployed successfully.
 
   Wolf Den:  http://${LOCAL_IP:-<HOST_IP>}:${WOLF_DEN_PORT}
   Pairing:   http://${LOCAL_IP:-<HOST_IP>}:${WOLF_DEN_PORT}/Clients/Pairing
+  Moonlight: ${MOONLIGHT_HOST}
+  Network:   ${NETWORK_LABEL}
   Appdata:   ${APPDATA}
   GPU:       ${GPU_VENDOR} ${GPU_NAME:-} (${RENDER_NODE})
 
 To pair with Moonlight:
   1. Open Wolf Den pairing at http://${LOCAL_IP:-<HOST_IP>}:${WOLF_DEN_PORT}/Clients/Pairing
-  2. Add this server in Moonlight: ${LOCAL_IP:-<HOST_IP>}
+  2. Add this server in Moonlight: ${MOONLIGHT_HOST}
   3. Enter the PIN shown in Moonlight into Wolf Den
 ================================================================
 EOF
