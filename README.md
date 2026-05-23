@@ -60,6 +60,11 @@ The Settings page (**Settings → Games on Whales**) covers:
   to `/mnt/user/appdata/gow`.
 - **Wolf Den port** — host port for the Wolf Den web UI. Defaults to `8080`
   and can be changed if another container already uses that port.
+- **Wolf network mode** — defaults to host networking. You can switch Wolf to
+  bridge networking or attach it to a custom Docker network such as Unraid
+  `br0` with a static IPv4 address for Moonlight pairing.
+  Bridge mode publishes Wolf's default Moonlight ports on the Unraid host;
+  custom networking is the option for avoiding host port conflicts.
 - **Install / Start / Stop / Update** — buttons that wrap the underlying
   `docker compose` calls so you don't have to drop to the shell.
 
@@ -77,6 +82,9 @@ http://<UNRAID_IP>:<WOLF_DEN_PORT>/Clients/Pairing
 Add the Unraid server in Moonlight, then enter the PIN shown by Moonlight on the
 Wolf Den pairing page. The settings page also shows direct **Open Wolf Den** and
 **Pair Moonlight** links when Wolf Den is running.
+
+If Wolf is configured on a custom Docker network with a static IPv4 address,
+add that Wolf IP in Moonlight instead of the Unraid host IP.
 
 ## Troubleshooting
 

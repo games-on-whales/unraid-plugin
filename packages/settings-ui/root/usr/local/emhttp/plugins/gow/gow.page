@@ -18,6 +18,9 @@ function load_cfg() {
         'GPU_NAME'    => '',
         'GPU_DRIVER'  => '',
         'WOLF_DEN_PORT' => '8080',
+        'WOLF_NETWORK_MODE' => 'host',
+        'WOLF_NETWORK_NAME' => '',
+        'WOLF_NETWORK_IPV4' => '',
         'DEPLOYED'    => 'false',
     ];
     if (!file_exists(GOW_CFG)) return $cfg;
@@ -110,6 +113,18 @@ function local_ip() {
     return trim(explode(' ', $out[0] ?? '')[0]);
 }
 
+function docker_networks() {
+    $networks = [];
+    exec("docker network ls --format '{{.Name}}' 2>/dev/null", $out);
+    foreach ($out as $name) {
+        $name = trim($name);
+        if ($name !== '' && preg_match('/^[A-Za-z0-9_.-]+$/', $name)) {
+            $networks[] = $name;
+        }
+    }
+    return array_values(array_unique($networks));
+}
+
 function valid_tcp_port($port) {
     return is_string($port) && preg_match('/^[0-9]+$/', $port)
         && (int)$port >= 1 && (int)$port <= 65535;
@@ -117,6 +132,22 @@ function valid_tcp_port($port) {
 
 function cleanup_wolf_runtime_containers() {
     exec('docker rm -f WolfPulseAudio >/dev/null 2>&1 || true');
+}
+
+function valid_network_mode($mode) {
+    return in_array($mode, ['host', 'bridge', 'custom'], true);
+}
+
+function valid_network_name($name) {
+    return is_string($name) && preg_match('/^[A-Za-z0-9_.-]+$/', $name);
+}
+
+function valid_ipv4($ip) {
+    if (!is_string($ip) || !preg_match('/^(\d{1,3}\.){3}\d{1,3}$/', $ip)) return false;
+    foreach (explode('.', $ip) as $part) {
+        if ((int)$part < 0 || (int)$part > 255 || (string)(int)$part !== (string)$part) return false;
+    }
+    return true;
 }
 
 // Wolf composes through Wayland; on NVIDIA this requires nvidia_drm.modeset=Y
@@ -158,6 +189,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cfg['RENDER_NODE'] = $_POST['render_node'] ?? '';
         $cfg['APPDATA']     = rtrim($_POST['appdata'] ?? DEFAULT_APPDATA, '/');
         $cfg['WOLF_DEN_PORT'] = trim($_POST['wolf_den_port'] ?? '8080');
+        $cfg['WOLF_NETWORK_MODE'] = $_POST['wolf_network_mode'] ?? 'host';
+        $cfg['WOLF_NETWORK_NAME'] = trim($_POST['wolf_network_name'] ?? '');
+        $cfg['WOLF_NETWORK_IPV4'] = trim($_POST['wolf_network_ipv4'] ?? '');
 
         // Look up vendor/name/driver from the selected node
         $gpus = detect_gpus();
@@ -176,6 +210,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Selected GPU not recognised. Please refresh and try again.';
         } elseif (!valid_tcp_port($cfg['WOLF_DEN_PORT'])) {
             $error = 'Wolf Den port must be a TCP port between 1 and 65535.';
+        } elseif (!valid_network_mode($cfg['WOLF_NETWORK_MODE'])) {
+            $error = 'Wolf network mode must be Host, Bridge, or Custom network.';
+        } elseif ($cfg['WOLF_NETWORK_MODE'] === 'custom' && !valid_network_name($cfg['WOLF_NETWORK_NAME'])) {
+            $error = 'Custom Wolf network requires a Docker network name such as br0.';
+        } elseif ($cfg['WOLF_NETWORK_MODE'] === 'custom' && $cfg['WOLF_NETWORK_IPV4'] === '') {
+            $error = 'Custom Wolf network requires a static IPv4 address.';
+        } elseif ($cfg['WOLF_NETWORK_MODE'] === 'custom' && !valid_ipv4($cfg['WOLF_NETWORK_IPV4'])) {
+            $error = 'Wolf static IPv4 address is invalid.';
         } else {
             save_cfg($cfg);
             // Run deploy in background; stream to log file.
@@ -233,6 +275,7 @@ if ($deploying) {
 }
 
 $gpus            = detect_gpus();
+$docker_networks = docker_networks();
 $ip              = local_ip();
 $wolf_status     = container_status('wolf');
 $wolf_den_status = container_status('wolf-den');
@@ -243,6 +286,10 @@ $deployed        = !$setup_mode && (($cfg['DEPLOYED'] === 'true') || $has_stack)
 $wolf_den_port   = valid_tcp_port($cfg['WOLF_DEN_PORT']) ? $cfg['WOLF_DEN_PORT'] : '8080';
 $wolf_den_url    = $ip ? "http://{$ip}:{$wolf_den_port}" : '';
 $pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
+$wolf_network_mode = valid_network_mode($cfg['WOLF_NETWORK_MODE']) ? $cfg['WOLF_NETWORK_MODE'] : 'host';
+$wolf_network_name = $cfg['WOLF_NETWORK_NAME'];
+$wolf_network_ipv4 = $cfg['WOLF_NETWORK_IPV4'];
+$moonlight_host    = ($wolf_network_mode === 'custom' && valid_ipv4($wolf_network_ipv4)) ? $wolf_network_ipv4 : $ip;
 $mdns_conflict   = $deployed && has_mdns_conflict();
 ?>
 <!DOCTYPE html>
@@ -279,6 +326,7 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
   .gow-msg.warn  { background: var(--mild-background-color);
                    border: 1px solid var(--orange-300); color: var(--text-color); }
   .gow-msg .gow-msg-link { color: inherit; text-decoration: underline; }
+  .gow-help      { color: var(--alt-text-color); font-size: 0.9em; margin: 0; }
   .gow-warn      { color: var(--orange-300); margin-top: 12px; }
   .gow-error     { color: var(--red-800);    margin-top: 12px; }
   .gow-log       { background: var(--background-color); color: var(--text-color);
@@ -374,6 +422,12 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
     <a href="<?= htmlspecialchars($pairing_url) ?>" target="_blank"><?= htmlspecialchars($pairing_url) ?></a>
   </div>
   <?php endif; ?>
+  <?php if ($moonlight_host): ?>
+  <div class="gow-row">
+    <span class="gow-label">Moonlight host</span>
+    <span><?= htmlspecialchars($moonlight_host) ?></span>
+  </div>
+  <?php endif; ?>
 
   <div class="gow-row" style="margin-top:10px">
     <span class="gow-label">GPU</span>
@@ -386,6 +440,18 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
   <div class="gow-row">
     <span class="gow-label">Wolf Den port</span>
     <span><?= htmlspecialchars($wolf_den_port) ?></span>
+  </div>
+  <div class="gow-row">
+    <span class="gow-label">Wolf network</span>
+    <span>
+      <?= htmlspecialchars(ucfirst($wolf_network_mode)) ?>
+      <?php if ($wolf_network_mode === 'custom'): ?>
+        <?= htmlspecialchars($wolf_network_name) ?>
+        <?php if ($wolf_network_ipv4): ?>
+          (<?= htmlspecialchars($wolf_network_ipv4) ?>)
+        <?php endif; ?>
+      <?php endif; ?>
+    </span>
   </div>
 </div>
 
@@ -411,7 +477,7 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
       <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="reconfigure">
       <button type="submit" class="gow-btn gow-btn-danger"
-              onclick="return confirm('This will let you change GPU and appdata settings. The stack will be restarted. Continue?')">
+              onclick="return confirm('This will let you change GPU, appdata, and network settings. The stack will be restarted. Continue?')">
         Reconfigure
       </button>
     </form>
@@ -459,6 +525,36 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
              min="1" max="65535" step="1">
     </div>
 
+    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
+      <label class="gow-label" for="wolf_network_mode">Wolf network mode</label>
+      <select name="wolf_network_mode" id="wolf_network_mode" class="gow-select">
+        <option value="host" <?= ($wolf_network_mode === 'host') ? 'selected' : '' ?>>Host</option>
+        <option value="bridge" <?= ($wolf_network_mode === 'bridge') ? 'selected' : '' ?>>Bridge</option>
+        <option value="custom" <?= ($wolf_network_mode === 'custom') ? 'selected' : '' ?>>Custom Docker network</option>
+      </select>
+      <p class="gow-help">Bridge publishes Wolf's default Moonlight ports on the host. Use a custom Docker network such as br0 with a static IP when another Sunshine/GameStream server already uses the Unraid host IP.</p>
+    </div>
+
+    <div class="gow-row gow-network-custom" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
+      <label class="gow-label" for="wolf_network_name">Docker network / interface</label>
+      <input type="text" name="wolf_network_name" id="wolf_network_name" class="gow-input"
+             value="<?= htmlspecialchars($wolf_network_name) ?>"
+             list="gow_networks"
+             placeholder="br0">
+      <datalist id="gow_networks">
+        <?php foreach ($docker_networks as $network): ?>
+          <option value="<?= htmlspecialchars($network) ?>"></option>
+        <?php endforeach; ?>
+      </datalist>
+    </div>
+
+    <div class="gow-row gow-network-custom" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
+      <label class="gow-label" for="wolf_network_ipv4">Wolf static IPv4</label>
+      <input type="text" name="wolf_network_ipv4" id="wolf_network_ipv4" class="gow-input"
+             value="<?= htmlspecialchars($wolf_network_ipv4) ?>"
+             placeholder="192.168.1.50">
+    </div>
+
     <?php if ($cfg['GPU_VENDOR'] === 'NVIDIA'): ?>
     <p class="gow-warn">
       ⚠ NVIDIA GPU selected. On first install, a driver volume will be built — this can take
@@ -492,5 +588,20 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
 <?php endif; ?>
 
 </div>
+<script>
+(() => {
+  const mode = document.getElementById('wolf_network_mode');
+  const customRows = document.querySelectorAll('.gow-network-custom');
+  if (!mode) return;
+
+  const syncNetworkFields = () => {
+    const show = mode.value === 'custom';
+    customRows.forEach(row => { row.style.display = show ? 'flex' : 'none'; });
+  };
+
+  mode.addEventListener('change', syncNetworkFields);
+  syncNetworkFields();
+})();
+</script>
 </body>
 </html>
