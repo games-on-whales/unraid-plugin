@@ -115,6 +115,15 @@ setup_appdata_dirs() {
     chmod 775 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d"
 }
 
+migrate_legacy_etc_wolf() {
+    local legacy="/etc/wolf"
+    [[ "$APPDATA" != "$legacy" && -d "$legacy" && ! -L "$legacy" ]] || return 0
+
+    info "Migrating existing Wolf data from ${legacy} into ${APPDATA}"
+    cp -a -n "${legacy}/." "${APPDATA}/" 2>/dev/null \
+        || warn "Could not migrate all existing Wolf data from ${legacy}"
+}
+
 cleanup_wolf_runtime_containers() {
     local container="WolfPulseAudio"
     if docker inspect "$container" &>/dev/null; then
@@ -213,8 +222,7 @@ YAML
     write_wolf_network_env
     cat <<YAML
     volumes:
-      - ${APPDATA}/cfg:/etc/wolf/cfg:rw
-      - ${APPDATA}/steam:/etc/wolf/steam:rw
+      - ${APPDATA}:/etc/wolf:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /dev/:/dev/:rw
       - /run/udev:/run/udev:rw
@@ -242,9 +250,8 @@ YAML
       - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
       - wolf-socket:/tmp/sockets
+      - ${APPDATA}:/etc/wolf:rw
       - ${APPDATA}/wolf-den:/app/wolf-den
-      - ${APPDATA}/covers:/etc/wolf/covers
-      - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
     network_mode: host
     depends_on:
       - wolf
@@ -288,8 +295,7 @@ YAML
     write_wolf_network_env
     cat <<YAML
     volumes:
-      - ${APPDATA}/cfg:/etc/wolf/cfg:rw
-      - ${APPDATA}/steam:/etc/wolf/steam:rw
+      - ${APPDATA}:/etc/wolf:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /dev/:/dev/:rw
       - /run/udev:/run/udev:rw
@@ -315,9 +321,8 @@ YAML
       - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
       - wolf-socket:/tmp/sockets
+      - ${APPDATA}:/etc/wolf:rw
       - ${APPDATA}/wolf-den:/app/wolf-den
-      - ${APPDATA}/covers:/etc/wolf/covers
-      - ${APPDATA}/compatibilitytools.d:/etc/wolf/compatibilitytools.d
     network_mode: host
     depends_on:
       - wolf
@@ -464,6 +469,7 @@ fi
 
 install_udev_rules
 setup_appdata_dirs
+migrate_legacy_etc_wolf
 ensure_wolf_uuid
 write_compose
 
