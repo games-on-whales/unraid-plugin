@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.23">
+<!ENTITY version   "2026.05.25">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,10 @@
 >
 
   <CHANGES>
+### 2026.05.25
+- Mount the selected appdata root at `/etc/wolf` so Wolf-created app containers write state under the chosen appdata path instead of host `/etc`
+- Copy any existing host `/etc/wolf` data into the selected appdata path without overwriting newer appdata files
+
 ### 2026.05.23
 - Add Wolf network settings to the GUI: host, bridge, or a custom Docker network such as `br0`
 - Publish Wolf's default Moonlight ports when bridge mode is selected
