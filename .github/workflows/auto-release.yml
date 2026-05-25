@@ -1,0 +1,100 @@
+name: auto-release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 2026.05.25). Leave empty to auto-generate from today.'
+        required: false
+        type: string
+
+jobs:
+  build-and-release:
+    # Prevent re-runs when this workflow pushes the version-bump commit back to main
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TODAY=$(date -u '+%Y.%m.%d')
+          git fetch --tags --quiet
+
+          # Find the latest tag for today (2026.05.25, 2026.05.25a, 2026.05.25b …)
+          LATEST=$(git tag -l "${TODAY}*" | sort -V | tail -1)
+
+          if [ -z "$LATEST" ]; then
+            VERSION="$TODAY"
+          elif [ "$LATEST" = "$TODAY" ]; then
+            VERSION="${TODAY}a"
+          else
+            SUFFIX="${LATEST#$TODAY}"
+            NEXT=$(echo "$SUFFIX" | tr 'a-y' 'b-z')
+            VERSION="${TODAY}${NEXT}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update gow.plg version
+        id: bump
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i 's/<!ENTITY version[[:space:]]*"[^"]*">/<!ENTITY version   "'"$VERSION"'">/' gow.plg
+          git diff --quiet gow.plg \
+            && echo "changed=false" >> "$GITHUB_OUTPUT" \
+            || echo "changed=true"  >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gow.plg
+          git commit -m "Release ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin HEAD:main
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Skip if the tag already exists (e.g. manual dispatch re-releasing an existing tag)
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists, skipping tag creation"
+          else
+            git tag "$VERSION"
+            git push origin "$VERSION"
+          fi
+
+      - name: Build settings-ui package
+        run: |
+          chmod +x utils/fmakepkg.sh
+          mkdir -p dist
+          cd packages/settings-ui/root
+          ../../../utils/fmakepkg.sh ../../../dist/settings-ui.txz
+
+      - name: Generate checksums
+        run: |
+          sha256sum dist/settings-ui.txz | awk '{print $1}' > dist/settings-ui.txz.sha256
+          md5sum    dist/settings-ui.txz | awk '{print $1}' > dist/settings-ui.txz.md5
+
+      - name: Create GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "dist/settings-ui.txz,dist/settings-ui.txz.sha256,dist/settings-ui.txz.md5,gow.plg"
+          tag: ${{ steps.version.outputs.version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generateReleaseNotes: true
