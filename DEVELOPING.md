@@ -164,7 +164,11 @@ Production installs pull `settings-ui.txz` from the GitHub **release** for the v
 
 ## Scripts not shipped in `gow.plg`
 
+<<<<<<< HEAD
 These stay in the repo for development and support; the plugin installer does not download them:
+=======
+Active feature work is split into four branches on top of `games-on-whales/unraid-plugin` `main`. Merge in order:
+>>>>>>> cbb6549 (Add advanced gow.cfg keys for images and encoder GPU)
 
 | Script | Purpose |
 |--------|---------|
