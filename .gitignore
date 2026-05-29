@@ -1,3 +1,5 @@
 package-dist/
 packages/settings-ui/dist/
+dist/
+gow-dev.plg
 

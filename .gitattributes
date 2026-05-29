@@ -1,1 +1,5 @@
-*.sh text=auto eol=lf
+*.page text eol=lf
+*.php text eol=lf
+*.cfg text eol=lf
+*.sh text eol=lf
+*.plg text eol=lf
