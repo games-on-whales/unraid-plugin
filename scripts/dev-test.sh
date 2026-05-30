@@ -129,6 +129,18 @@ echo "==> dev-test: python compile"
 python3 -m py_compile "$SCRIPTS/apply-mount-presets.py" || fail "py_compile apply-mount-presets.py"
 pass "python compile"
 
+echo "==> dev-test: health-lib smoke (PHP 8+)"
+HEALTH_LIB="${ROOT}/packages/settings-ui/root/usr/local/emhttp/plugins/gow/php/health-lib.php"
+php -l "$HEALTH_LIB" >/dev/null || fail "php -l health-lib.php"
+php -r '
+require "'"$HEALTH_LIB"'";
+$cfg = ["APPDATA" => "/tmp/gow-devtest-appdata", "ROMS_LIBRARY" => "/mnt/user/games/roms", "DEPLOYED" => "false"];
+$r = gow_run_health_checks($cfg);
+if (empty($r["checks"])) { fwrite(STDERR, "no checks\n"); exit(1); }
+if (!in_array($r["summary"], ["healthy", "degraded", "unhealthy"], true)) { fwrite(STDERR, "bad summary\n"); exit(1); }
+' || fail "gow_run_health_checks smoke"
+pass "health-lib smoke"
+
 if [[ "$FAIL" -ne 0 ]]; then
     echo "dev-test: FAILED"
     exit 1

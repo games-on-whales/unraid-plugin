@@ -9,6 +9,15 @@ function gow_health_item($level, $label, $hint = '') {
     ];
 }
 
+/** PHP 8 removed is_socket(); detect Unix sockets via file mode. */
+function gow_is_unix_socket($path) {
+    if (!is_string($path) || $path === '' || !file_exists($path)) {
+        return false;
+    }
+    $mode = @fileperms($path);
+    return $mode !== false && (($mode & 0140000) === 0140000);
+}
+
 function gow_health_summary(array $checks) {
     $has_fail = false;
     $has_warn = false;
@@ -180,10 +189,11 @@ function gow_run_health_checks(array $cfg) {
     $checks[] = gow_health_audit_library_mounts($cfg, $cfg_file);
 
     $sock = $appdata . '/run/wolf.sock';
+    $sock_ok = gow_is_unix_socket($sock);
     $checks[] = gow_health_item(
-        is_socket($sock) ? 'ok' : 'warn',
+        $sock_ok ? 'ok' : 'warn',
         'Wolf API socket',
-        is_socket($sock) ? $sock : 'Socket appears after Wolf starts (needed for Den/API).'
+        $sock_ok ? $sock : 'Socket appears after Wolf starts (needed for Den/API).'
     );
 
     return [
