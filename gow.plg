@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.25">
+<!ENTITY version   "2026.05.30">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,9 @@
 >
 
   <CHANGES>
+### 2026.05.30
+- Set `HOST_APPS_STATE_FOLDER` to the selected appdata path so Wolf bind-mounts spawned app containers from the chosen appdata directory instead of host `/etc/wolf`
+
 ### 2026.05.25
 - Mount the selected appdata root at `/etc/wolf` so Wolf-created app containers write state under the chosen appdata path instead of host `/etc`
 - Copy any existing host `/etc/wolf` data into the selected appdata path without overwriting newer appdata files
