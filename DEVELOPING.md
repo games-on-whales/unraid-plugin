@@ -74,7 +74,7 @@ plugin install http://<your-dev-machine-ip>:8888/gow.plg
 | `library-links.sh` | Deploy/update/mount presets | Symlink user library paths under `${APPDATA}/` when they live outside GoW appdata |
 | `wolf-api.sh` | Other scripts | `curl` helpers for Wolf's Unix-socket REST API (`/api/v1/*`) |
 | `apply-mount-presets.sh` / `.py` | Deploy/update/fix | Apply library mounts via Wolf API when `${APPDATA}/run/wolf.sock` is up, else patch `config.toml` |
-| `detect-paths.sh` | Plugin install | Suggest existing ROM/BIOS/Steam/etc. share paths to pre-fill setup |
+| `detect-paths.sh` | `install.sh` (first cfg) | Suggest existing ROM/BIOS/Steam/etc. share paths when folders exist |
 | `repair-esde.sh` | UI Advanced | Restore ES-DE Custom Scripts config and re-apply ROM/BIOS mounts |
 | `cleanup-wolf-sessions.sh` | UI / stop / Fix mounts | Remove exited `Wolf*` session containers that hold memory |
 | `health-check.sh` | CLI | Print stack health; exit code reflects healthy/degraded/unhealthy |
@@ -95,6 +95,9 @@ BIOS_LIBRARY=/mnt/user/games/bioses
 STEAM_LIBRARY=/mnt/user/games/steam
 GAMES_LIBRARY=/mnt/user/games
 LUTRIS_LIBRARY=/mnt/user/games/lutris
+WOLF_IMAGE=ghcr.io/games-on-whales/wolf:stable
+WOLF_DEN_IMAGE=ghcr.io/games-on-whales/wolf-den:stable
+WOLF_ENCODER_NODE=
 RENDER_NODE=/dev/dri/renderD128
 GPU_VENDOR=NVIDIA
 GPU_NAME=RTX 3090
@@ -159,20 +162,17 @@ If `gow-health-card` is missing, the running UI is still an old build. Fix:
 
 Production installs pull `settings-ui.txz` from the GitHub **release** for the version in `gow.plg`. Bumping `gow.plg` to `2026.05.29` without a `2026.05.29` release tag leaves the plugin update unable to fetch the new txz.
 
-## Stacked PR workflow (fork)
+## Scripts not shipped in `gow.plg`
 
-Active feature work is split into four branches on top of commit `31222d6` (2026.05.30 lean baseline). Merge in order:
+These stay in the repo for development and support; the plugin installer does not download them:
 
-| PR | Branch | Contents |
-|----|--------|----------|
-| #8 | `cursor/mount-presets-core-c2d1` | Games-share defaults, TOML-first mount presets, `dev-test.sh`, Wolf socket API helper |
-| #7 | `cursor/health-config-audit-c2d1` | `health-lib.php`, mount audit, FAQ |
-| #6 | `cursor/gow-advanced-settings-c2d1` | `WOLF_IMAGE`, `WOLF_ENCODER_NODE`, install backfill |
-| #9 | `cursor/config-setup-flow-c2d1` | Setup steps, save vs deploy, pool-aware path browse |
+| Script | Purpose |
+|--------|---------|
+| `dev-test.sh` | Local mount-preset and syntax checks |
+| `hotfix-page.sh` | Dev: install a local `settings-ui.txz` without full plugin bump |
+| `wipe-full.sh` | Destructive uninstall helper (manual use only) |
 
-PRs #4 and #5 are superseded by #8. Do not use `draft/plugin-rom-grabgo` in parallel.
-
-Before pushing UI changes, run `bash scripts/dev-test.sh` and `php -l packages/settings-ui/root/usr/local/emhttp/plugins/gow/gow.page`.
+`utils.sh` is legacy; install/update use `vars.sh` and release URLs from `gow.plg`.
 
 ## Releasing
 

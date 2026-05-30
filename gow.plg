@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.30">
+<!ENTITY version   "2026.05.31">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,9 +24,14 @@
 >
 
   <CHANGES>
-### 2026.05.30
-- Lean plugin UI: removed Apps panel, config backups, scheduled auto-health, live memory polling, and live log tailing
-- Simplified health checks, Advanced panel, and Fix mounts (cleanup + presets + restart only)
+### 2026.05.31
+- Add configurable library paths with games-share defaults and auto-discovery of existing share folders (user and common cache paths)
+- Symlink external library folders into GoW appdata; apply mount presets to Wolf config.toml for emulators and game stores
+- Add setup UI improvements: step-by-step flow, Save settings vs Save and redeploy, standard games-share layout, pool-aware folder browse
+- Add health checks and Fix all (containers, Wolf Den HTTP, pairing, mount audit, OOM, udev, API socket)
+- Add advanced gow.cfg keys: WOLF_IMAGE, WOLF_DEN_IMAGE, and WOLF_ENCODER_NODE for multi-GPU encode
+- Add maintenance scripts (fix-all, repair ES-DE, pairing backup, session cleanup, CLI health-check) and dev-test.sh for local validation
+- Fix health checks on PHP 8+ (Unix socket detection)
 
 ### 2026.05.29
 - Add read-only Apps panel: per-app image, mounts, environment, and RAM-heavy tags parsed from Wolf's config.toml
