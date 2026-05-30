@@ -45,6 +45,16 @@ mounts = ["/etc/wolf/roms:/ROMs:rw"]
 env = ["GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /dev/nvidia*"]
 
 [[profiles.apps]]
+title = "ES-DE"
+
+[profiles.apps.runner]
+type = "docker"
+name = "WolfES-DE-alias"
+image = "ghcr.io/games-on-whales/es-de:edge"
+mounts = []
+env = ["GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /dev/nvidia*"]
+
+[[profiles.apps]]
 title = "Heroic"
 
 [profiles.apps.runner]
@@ -89,6 +99,12 @@ else
     fail "EmulationStation ROM mount missing"
 fi
 
+if grep -A12 'title = "ES-DE"' "$TMP/config.toml" | grep -q '/mnt/user/games/roms:/ROMs:rw'; then
+    pass "ES-DE title alias → EmulationStation ROM mount"
+else
+    fail "ES-DE alias ROM mount missing"
+fi
+
 if grep -A12 'title = "Heroic"' "$TMP/config.toml" | grep -q ':/games:rw'; then
     pass "Heroic title alias → /games"
 else
@@ -131,15 +147,14 @@ pass "python compile"
 
 echo "==> dev-test: health-lib smoke (PHP 8+)"
 HEALTH_LIB="${ROOT}/packages/settings-ui/root/usr/local/emhttp/plugins/gow/php/health-lib.php"
-php -l "$HEALTH_LIB" >/dev/null || fail "php -l health-lib.php"
-php -r '
-require "'"$HEALTH_LIB"'";
-$cfg = ["APPDATA" => "/tmp/gow-devtest-appdata", "ROMS_LIBRARY" => "/mnt/user/games/roms", "DEPLOYED" => "false"];
-$r = gow_run_health_checks($cfg);
-if (empty($r["checks"])) { fwrite(STDERR, "no checks\n"); exit(1); }
-if (!in_array($r["summary"], ["healthy", "degraded", "unhealthy"], true)) { fwrite(STDERR, "bad summary\n"); exit(1); }
-' || fail "gow_run_health_checks smoke"
-pass "health-lib smoke"
+HEALTH_TEST="${SCRIPTS}/dev-test-health.php"
+if command -v php >/dev/null 2>&1; then
+    php -l "$HEALTH_LIB" >/dev/null || fail "php -l health-lib.php"
+    php "$HEALTH_TEST" >/dev/null || fail "gow_run_health_checks smoke"
+    pass "health-lib smoke"
+else
+    echo "SKIP: php not in PATH (run: docker run --rm -v \"\$PWD:/repo\" php:8-cli php /repo/scripts/dev-test-health.php)"
+fi
 
 if [[ "$FAIL" -ne 0 ]]; then
     echo "dev-test: FAILED"
