@@ -26,6 +26,7 @@
   <CHANGES>
 ### 2026.05.30
 - Set `HOST_APPS_STATE_FOLDER` to the selected appdata path so Wolf bind-mounts spawned app containers from the chosen appdata directory instead of host `/etc/wolf`
+- Fix the Wolf Den port not changing: publish the configured host port to the container's port `8080` instead of putting Wolf Den on host networking, which ignored the setting and left it on `8080`
 
 ### 2026.05.25
 - Mount the selected appdata root at `/etc/wolf` so Wolf-created app containers write state under the chosen appdata path instead of host `/etc`
