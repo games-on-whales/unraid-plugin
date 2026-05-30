@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
-<!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.31">
+<!ENTITY org       "Dadud">
+<!ENTITY version   "2026.05.31a">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
