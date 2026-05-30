@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.25">
+<!ENTITY version   "2026.05.30">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,9 @@
 >
 
   <CHANGES>
+### 2026.05.30
+- Fix the Wolf Den port not changing: publish the configured host port to the container's port `8080` instead of putting Wolf Den on host networking, which ignored the setting and left it on `8080`
+
 ### 2026.05.25
 - Mount the selected appdata root at `/etc/wolf` so Wolf-created app containers write state under the chosen appdata path instead of host `/etc`
 - Copy any existing host `/etc/wolf` data into the selected appdata path without overwriting newer appdata files

@@ -28,7 +28,6 @@ WOLF_NETWORK_IPV4="${WOLF_NETWORK_IPV4:-}"
 if [[ ! "$WOLF_DEN_PORT" =~ ^[0-9]+$ ]] || (( WOLF_DEN_PORT < 1 || WOLF_DEN_PORT > 65535 )); then
     err "Wolf Den port must be a TCP port between 1 and 65535"
 fi
-WOLF_DEN_LISTEN_URL="http://0.0.0.0:${WOLF_DEN_PORT}"
 
 valid_network_name() {
     [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]
@@ -247,12 +246,12 @@ YAML
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
-      - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
       - wolf-socket:/tmp/sockets
       - ${APPDATA}:/etc/wolf:rw
       - ${APPDATA}/wolf-den:/app/wolf-den
-    network_mode: host
+    ports:
+      - "${WOLF_DEN_PORT}:8080"
     depends_on:
       - wolf
     restart: unless-stopped
@@ -318,12 +317,12 @@ YAML
       - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
-      - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
       - wolf-socket:/tmp/sockets
       - ${APPDATA}:/etc/wolf:rw
       - ${APPDATA}/wolf-den:/app/wolf-den
-    network_mode: host
+    ports:
+      - "${WOLF_DEN_PORT}:8080"
     depends_on:
       - wolf
     restart: unless-stopped
