@@ -8,6 +8,8 @@
 set -euo pipefail
 
 source "$(dirname "$0")/vars.sh"
+source "$(dirname "$0")/pairing-state.sh"
+source "$(dirname "$0")/library-links.sh"
 
 err()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -23,6 +25,19 @@ WOLF_DEN_PORT="${WOLF_DEN_PORT:-8080}"
 WOLF_NETWORK_MODE="${WOLF_NETWORK_MODE:-host}"
 WOLF_NETWORK_NAME="${WOLF_NETWORK_NAME:-}"
 WOLF_NETWORK_IPV4="${WOLF_NETWORK_IPV4:-}"
+STEAM_LIBRARY="${STEAM_LIBRARY:-}"
+GAMES_LIBRARY="${GAMES_LIBRARY:-}"
+ROMS_LIBRARY="${ROMS_LIBRARY:-}"
+BIOS_LIBRARY="${BIOS_LIBRARY:-}"
+MEDIA_LIBRARY="${MEDIA_LIBRARY:-}"
+LUTRIS_LIBRARY="${LUTRIS_LIBRARY:-}"
+PRISM_LIBRARY="${PRISM_LIBRARY:-}"
+COMPAT_TOOLS_PATH="${COMPAT_TOOLS_PATH:-}"
+WOLF_MEMORY_LIMIT="${WOLF_MEMORY_LIMIT:-}"
+WOLF_DEN_MEMORY_LIMIT="${WOLF_DEN_MEMORY_LIMIT:-}"
+WOLF_IMAGE="${WOLF_IMAGE:-${DEFAULT_WOLF_IMAGE}}"
+WOLF_DEN_IMAGE="${WOLF_DEN_IMAGE:-${DEFAULT_WOLF_DEN_IMAGE}}"
+WOLF_ENCODER_NODE="${WOLF_ENCODER_NODE:-}"
 [[ -n "${RENDER_NODE:-}" ]] || err "No GPU configured. Select a GPU in Settings > Games on Whales."
 [[ -n "${GPU_VENDOR:-}"  ]] || err "GPU vendor not set. Re-run setup in Settings > Games on Whales."
 if [[ ! "$WOLF_DEN_PORT" =~ ^[0-9]+$ ]] || (( WOLF_DEN_PORT < 1 || WOLF_DEN_PORT > 65535 )); then
@@ -42,6 +57,25 @@ valid_ipv4() {
     for part in "${parts[@]}"; do
         (( part >= 0 && part <= 255 )) || return 1
     done
+}
+
+valid_memory_limit() {
+    local limit="$1"
+    [[ -z "$limit" ]] && return 0
+    [[ "$limit" =~ ^[0-9]+[bkmgBKMG]?$ ]]
+}
+
+warn_host_memory() {
+    local total_kb total_gib
+    total_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+    (( total_kb > 0 )) || return 0
+    total_gib=$(( total_kb / 1024 / 1024 ))
+    if (( total_gib < 12 )); then
+        warn "Host RAM is about ${total_gib} GiB. Wolf streaming plus emulators can OOM smaller systems — enable Unraid swap and keep Moonlight at 1080p/H.264 if you see crashes."
+    fi
+    if [[ -z "$WOLF_MEMORY_LIMIT" ]] && (( total_gib <= 16 )); then
+        warn "Consider setting a Wolf memory cap in plugin setup (e.g. 6G on a 16 GiB box) so a Wolf leak cannot take down the whole server."
+    fi
 }
 
 validate_network_config() {
@@ -105,14 +139,38 @@ setup_appdata_dirs() {
     info "Creating appdata directories at ${APPDATA}"
     mkdir -p \
         "${APPDATA}/cfg" \
+        "${APPDATA}/run" \
         "${APPDATA}/wolf-den" \
-        "${APPDATA}/covers" \
-        "${APPDATA}/steam" \
-        "${APPDATA}/compatibilitytools.d"
+        "${APPDATA}/covers"
+    info "Appdata skeleton created"
+
     # wolf-den drops privileges to UID 1000 via gosu, so its writable dirs
     # must be accessible before the app starts.
-    chown -R 1000:1000 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d" 2>/dev/null || true
-    chmod 775 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d"
+    info "Setting Wolf Den file ownership (can take a moment on slow shares)..."
+    chown -R 1000:1000 "${APPDATA}/wolf-den" "${APPDATA}/covers" 2>/dev/null || true
+    chmod 775 "${APPDATA}/wolf-den" "${APPDATA}/covers"
+    info "Appdata directories ready"
+}
+
+sync_library_links_logged() {
+    local line
+    info "Publishing library paths under ${APPDATA} (symlinks only when needed)"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        info "  ${line/=/ → }"
+    done < <(gow_sync_library_links "$APPDATA")
+    gow_resolve_library_mounts "$APPDATA"
+    if [[ -n "${PRISM_LIBRARY:-}" ]]; then
+        mkdir -p "${PRISM_LIBRARY}"
+        chown 1000:1000 "${PRISM_LIBRARY}" 2>/dev/null || true
+    elif [[ -n "${GAMES_LIBRARY:-}" ]]; then
+        mkdir -p "${GAMES_LIBRARY}/prismlauncher"
+        chown 1000:1000 "${GAMES_LIBRARY}/prismlauncher" 2>/dev/null || true
+    fi
+    if [[ -n "${COMPAT_TOOLS_PATH:-}" ]]; then
+        chown -R 1000:1000 "$COMPAT_TOOLS_PATH" 2>/dev/null || true
+        chmod 775 "$COMPAT_TOOLS_PATH" 2>/dev/null || true
+    fi
 }
 
 migrate_legacy_etc_wolf() {
@@ -133,31 +191,77 @@ cleanup_wolf_runtime_containers() {
     fi
 }
 
-# Wolf v1+ requires a uuid in config.toml. Older auto-generated configs (v0)
-# may be missing it, which causes Wolf to crash on startup.
-ensure_wolf_uuid() {
-    local cfg_file="${APPDATA}/cfg/config.toml"
-    [[ -f "$cfg_file" ]] || return 0   # no existing config — Wolf generates a fresh one
-    if ! grep -q 'uuid' "$cfg_file"; then
-        info "Upgrading Wolf config: adding missing uuid"
-        local uuid
-        uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null) \
-            || uuid=$(printf '%s' "$(date +%s%N)$(hostname)" | md5sum | sed 's/\(.\{8\}\)\(.\{4\}\)\(.\{4\}\)\(.\{4\}\)\(.\{12\}\).*/\1-\2-\3-\4-\5/')
-        if grep -q '^\[server\]' "$cfg_file"; then
-            sed -i '/^\[server\]/a uuid = "'"${uuid}"'"' "$cfg_file"
-        else
-            printf '[server]\nuuid = "%s"\n\n' "${uuid}" | cat - "$cfg_file" > "${cfg_file}.tmp"
-            mv "${cfg_file}.tmp" "$cfg_file"
-        fi
-    fi
+cleanup_stale_wolf_sessions() {
+    local script
+    script="$(dirname "$0")/cleanup-wolf-sessions.sh"
+    [[ -x "$script" ]] || return 0
+    bash "$script" || warn "Stale Wolf session cleanup encountered errors"
+}
+
+write_compose_memory_limits() {
+    local service="$1"
+    local limit=""
+
+    case "$service" in
+        wolf) limit="$WOLF_MEMORY_LIMIT" ;;
+        wolf-den) limit="$WOLF_DEN_MEMORY_LIMIT" ;;
+    esac
+
+    [[ -n "$limit" ]] || return 0
+    valid_memory_limit "$limit" || err "Invalid memory limit for ${service}: ${limit} (use e.g. 6G or 512M)"
+    printf '    mem_limit: %s\n' "$limit"
 }
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
+
+write_library_mounts() {
+    if [[ -n "$STEAM_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/steam:rw\n' "$STEAM_LIBRARY"
+    fi
+    if [[ -n "$GAMES_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/games:rw\n' "$GAMES_LIBRARY"
+    fi
+    if [[ -n "$ROMS_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/roms:rw\n' "$ROMS_LIBRARY"
+    fi
+    if [[ -n "$BIOS_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/bioses:rw\n' "$BIOS_LIBRARY"
+    fi
+    if [[ -n "$MEDIA_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/media:rw\n' "$MEDIA_LIBRARY"
+    fi
+    if [[ -n "$LUTRIS_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/lutris:rw\n' "$LUTRIS_LIBRARY"
+    fi
+    if [[ -n "$PRISM_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/prismlauncher:rw\n' "$PRISM_LIBRARY"
+    fi
+    if [[ -n "$COMPAT_TOOLS_PATH" ]]; then
+        printf '      - %s:/etc/wolf/compatibilitytools.d:rw\n' "$COMPAT_TOOLS_PATH"
+    fi
+}
+
+write_wolf_den_compat_mount() {
+    if [[ -n "$COMPAT_TOOLS_PATH" ]]; then
+        cat <<YAML
+      - ${COMPAT_TOOLS_PATH}:/etc/wolf/compatibilitytools.d:rw
+YAML
+    fi
+}
 
 write_wolf_network_env() {
     if [[ "$WOLF_NETWORK_MODE" == "custom" && -n "$WOLF_NETWORK_IPV4" ]]; then
         cat <<YAML
       - WOLF_INTERNAL_IP=${WOLF_NETWORK_IPV4}
+YAML
+    fi
+}
+
+write_wolf_encoder_env() {
+    if [[ -n "$WOLF_ENCODER_NODE" ]]; then
+        cat <<YAML
+      - WOLF_ENCODER_NODE=${WOLF_ENCODER_NODE}
+      - GST_GL_DRM_DEVICE=${WOLF_ENCODER_NODE}
 YAML
     fi
 }
@@ -210,24 +314,27 @@ write_compose_nvidia() {
     cat <<YAML
 services:
   wolf:
-    image: ghcr.io/games-on-whales/wolf:stable
+    image: ${WOLF_IMAGE}
     container_name: wolf
     environment:
       - WOLF_RENDER_NODE=${RENDER_NODE}
+$(write_wolf_encoder_env)
       - NVIDIA_DRIVER_VOLUME_NAME=nvidia-driver-vol
-      - XDG_RUNTIME_DIR=/tmp/sockets
+      - WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+$(write_wolf_pairing_env)
 YAML
     write_wolf_network_env
     cat <<YAML
     volumes:
       - ${APPDATA}:/etc/wolf:rw
+      - ${APPDATA}/run:/var/run/wolf:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /dev/:/dev/:rw
       - /run/udev:/run/udev:rw
       - nvidia-driver-vol:/usr/nvidia:rw
-      - wolf-socket:/tmp/sockets
+$(write_library_mounts)
     devices:
       - /dev/dri
       - /dev/uinput
@@ -235,32 +342,34 @@ YAML
 ${nvidia_devices}
     device_cgroup_rules:
       - 'c 13:* rmw'
+$(write_compose_memory_limits wolf)
 YAML
     write_wolf_network_service
     cat <<YAML
     restart: unless-stopped
 
   wolf-den:
-    image: ghcr.io/games-on-whales/wolf-den:stable
+    image: ${WOLF_DEN_IMAGE}
     container_name: wolf-den
     environment:
-      - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
+      - WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
       - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
-      - wolf-socket:/tmp/sockets
+      - ${APPDATA}/run:/var/run/wolf:rw
       - ${APPDATA}:/etc/wolf:rw
       - ${APPDATA}/wolf-den:/app/wolf-den
+$(write_wolf_den_compat_mount)
     network_mode: host
     depends_on:
       - wolf
+$(write_compose_memory_limits wolf-den)
     restart: unless-stopped
 
 volumes:
   nvidia-driver-vol:
     external: true
-  wolf-socket:
 YAML
     write_compose_networks
     } > "$COMPOSE_FILE"
@@ -284,52 +393,55 @@ write_compose_standard() {
     cat <<YAML
 services:
   wolf:
-    image: ghcr.io/games-on-whales/wolf:stable
+    image: ${WOLF_IMAGE}
     container_name: wolf
     environment:
       - WOLF_RENDER_NODE=${RENDER_NODE}
-      - XDG_RUNTIME_DIR=/tmp/sockets
+$(write_wolf_encoder_env)
+      - WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+$(write_wolf_pairing_env)
 YAML
     write_wolf_network_env
     cat <<YAML
     volumes:
       - ${APPDATA}:/etc/wolf:rw
+      - ${APPDATA}/run:/var/run/wolf:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /dev/:/dev/:rw
       - /run/udev:/run/udev:rw
-      - wolf-socket:/tmp/sockets
+$(write_library_mounts)
     device_cgroup_rules:
       - 'c 13:* rmw'
     devices:
       - /dev/dri
       - /dev/uinput
       - /dev/uhid
+$(write_compose_memory_limits wolf)
 YAML
     write_wolf_network_service
     cat <<YAML
     restart: unless-stopped
 
   wolf-den:
-    image: ghcr.io/games-on-whales/wolf-den:stable
+    image: ${WOLF_DEN_IMAGE}
     container_name: wolf-den
     environment:
-      - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
+      - WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
       - ASPNETCORE_URLS=${WOLF_DEN_LISTEN_URL}
     volumes:
-      - wolf-socket:/tmp/sockets
+      - ${APPDATA}/run:/var/run/wolf:rw
       - ${APPDATA}:/etc/wolf:rw
       - ${APPDATA}/wolf-den:/app/wolf-den
+$(write_wolf_den_compat_mount)
     network_mode: host
     depends_on:
       - wolf
+$(write_compose_memory_limits wolf-den)
     restart: unless-stopped
-
-volumes:
-  wolf-socket:
 YAML
     write_compose_networks
     } > "$COMPOSE_FILE"
@@ -459,29 +571,74 @@ EOF
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 validate_network_config
+valid_memory_limit "$WOLF_MEMORY_LIMIT" || err "Wolf memory limit must be empty or like 6G / 8192M"
+valid_memory_limit "$WOLF_DEN_MEMORY_LIMIT" || err "Wolf Den memory limit must be empty or like 512M"
+warn_host_memory
+
+backup_pairing_state
 
 # Stop existing stack on reconfigure
 if [[ -f "$COMPOSE_FILE" ]]; then
     info "Stopping existing stack for reconfiguration"
     docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
     cleanup_wolf_runtime_containers
+    cleanup_stale_wolf_sessions
 fi
 
 install_udev_rules
 setup_appdata_dirs
+sync_library_links_logged
 migrate_legacy_etc_wolf
-ensure_wolf_uuid
+info "Preparing Moonlight pairing state"
+prepare_pairing_state
 write_compose
 
 if [[ "$GPU_VENDOR" == "NVIDIA" ]]; then
     build_nvidia_volume
 fi
 
-info "Pulling Docker images..."
-docker compose -f "$COMPOSE_FILE" pull
+info "Pulling Docker images (progress below)..."
+pull_attempt=1
+while (( pull_attempt <= 3 )); do
+    if docker compose -f "$COMPOSE_FILE" pull; then
+        break
+    fi
+    if (( pull_attempt >= 3 )); then
+        err "Image pull failed after 3 attempts"
+    fi
+    warn "Image pull failed (attempt ${pull_attempt}/3), retrying..."
+    (( pull_attempt++ ))
+    sleep 5
+done
 
 info "Starting Wolf + Wolf Den..."
 docker compose -f "$COMPOSE_FILE" up -d
+
+info "Waiting for Wolf config and API socket (for library mount presets)..."
+for _ in $(seq 1 45); do
+    [[ -f "${APPDATA}/cfg/config.toml" ]] || { sleep 2; continue; }
+    if [[ -S "${APPDATA}/run/wolf.sock" ]]; then
+        break
+    fi
+    sleep 2
+done
+
+if [[ -f "${APPDATA}/cfg/config.toml" ]]; then
+    if bash "$(dirname "$0")/apply-mount-presets.sh"; then
+        if [[ -n "${ROMS_LIBRARY:-}" ]] && [[ -x "$(dirname "$0")/repair-esde.sh" ]]; then
+            bash "$(dirname "$0")/repair-esde.sh" || warn "ES-DE repair reported errors (continuing)"
+            if [[ -x "$(dirname "$0")/repair-pegasus.sh" ]]; then
+                bash "$(dirname "$0")/repair-pegasus.sh" || warn "Pegasus repair reported errors (continuing)"
+            fi
+        fi
+        info "Restarting Wolf so app runner mount presets take effect..."
+        docker compose -f "$COMPOSE_FILE" restart wolf
+    fi
+else
+    warn "Wolf config not created yet; configure library paths and click Install again if app mounts are missing"
+fi
+
+verify_pairing_state
 
 install_autostart
 
