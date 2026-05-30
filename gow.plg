@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.05.25">
+<!ENTITY version   "2026.05.31">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,36 @@
 >
 
   <CHANGES>
+### 2026.05.31
+- Add configurable library paths with games-share defaults and auto-discovery of existing share folders (user and common cache paths)
+- Symlink external library folders into GoW appdata; apply mount presets to Wolf config.toml for emulators and game stores
+- Add setup UI improvements: step-by-step flow, Save settings vs Save and redeploy, standard games-share layout, pool-aware folder browse
+- Add health checks and Fix all (containers, Wolf Den HTTP, pairing, mount audit, OOM, udev, API socket)
+- Add advanced gow.cfg keys: WOLF_IMAGE, WOLF_DEN_IMAGE, and WOLF_ENCODER_NODE for multi-GPU encode
+- Add maintenance scripts (fix-all, repair ES-DE, pairing backup, session cleanup, CLI health-check) and dev-test.sh for local validation
+- Fix health checks on PHP 8+ (Unix socket detection)
+
+### 2026.05.29
+- Add read-only Apps panel: per-app image, mounts, environment, and RAM-heavy tags parsed from Wolf's config.toml
+- Show live Wolf/Wolf Den memory usage and active streaming session count on the dashboard
+- Show Wolf/Wolf Den image, build date, short digest, and last deploy/update time in Status
+- Add config backup & restore (config.toml + pairing certs) with auto-snapshot before every deploy/update
+- Add opt-in scheduled health check (every 30 min) with optional auto-run of Fix all when unhealthy
+- Group the Advanced panel into Maintenance / Config backups / Danger / Live logs
+- UI polish: mobile/responsive layout, focus-visible outlines, ARIA labels, and multi-line status messages
+- Normalize all plugin scripts to LF line endings so they run reliably on Unraid
+
+### 2026.05.28
+- Add Unraid folder pickers for appdata and optional library mount paths (Steam, games, compatibility tools)
+- Add Reset to Defaults action that stops the stack and restores plugin settings without deleting appdata
+- Add live log viewer on the dashboard with polling for Wolf, Wolf Den, and boot auto-start logs
+- Improve image pull reliability with retries and force-recreate on update; show update progress like deploy
+- Fix ES-DE / Pegasus / RetroArch library mounts (including ~/bioses compatibility) and add Repair ES-DE action
+- Add OOM warnings, optional Wolf memory caps, and stale session cleanup to reduce memory-related crashes
+- Improve grab-and-go setup: share-aware paths, folder browse buttons, preflight checks, getting-started guide
+- Add dashboard health check with live refresh (containers, pairing, mounts, GPU, OOM)
+- Add pre-install health on setup, Fix all button (cleanup + mounts + ES-DE repair + restart)
+
 ### 2026.05.25
 - Mount the selected appdata root at `/etc/wolf` so Wolf-created app containers write state under the chosen appdata path instead of host `/etc`
 - Copy any existing host `/etc/wolf` data into the selected appdata path without overwriting newer appdata files
@@ -142,6 +172,46 @@
 
   <FILE Name="&script_dir;/update.sh">
     <URL>&gitPkgURL;/scripts/update.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/reset.sh">
+    <URL>&gitPkgURL;/scripts/reset.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/library-links.sh">
+    <URL>&gitPkgURL;/scripts/library-links.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/wolf-api.sh">
+    <URL>&gitPkgURL;/scripts/wolf-api.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/apply-mount-presets.sh">
+    <URL>&gitPkgURL;/scripts/apply-mount-presets.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/apply-mount-presets.py">
+    <URL>&gitPkgURL;/scripts/apply-mount-presets.py</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/pairing-state.sh">
+    <URL>&gitPkgURL;/scripts/pairing-state.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/repair-esde.sh">
+    <URL>&gitPkgURL;/scripts/repair-esde.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/detect-paths.sh">
+    <URL>&gitPkgURL;/scripts/detect-paths.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/health-check.sh">
+    <URL>&gitPkgURL;/scripts/health-check.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/fix-all.sh">
+    <URL>&gitPkgURL;/scripts/fix-all.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/cleanup-wolf-sessions.sh">
+    <URL>&gitPkgURL;/scripts/cleanup-wolf-sessions.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/apply-ui.sh">
+    <URL>&gitPkgURL;/scripts/apply-ui.sh</URL>
   </FILE>
 
   <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md).

@@ -1,3 +1,14 @@
 package-dist/
 packages/settings-ui/dist/
+dist/
+gow-dev.plg
+
+# Python / local dev
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
+
+# Local dev PLG (see DEVELOPING.md); never commit credentials
+*.local.plg
 

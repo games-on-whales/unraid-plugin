@@ -1,31 +1,92 @@
 Menu="OtherSettings"
 Title="Games on Whales"
-Icon="gow.png"
+Icon="images/gow.png"
+Markdown="false"
 ---
 <?php
-// ── Config ────────────────────────────────────────────────────────────────────
+// Unraid includes .page files inside the Dynamix shell — do not emit a full HTML document.
+global $var;
+if (!is_array($var ?? null)) {
+    $var = [];
+}
+
+function gow_csrf_field() {
+    global $var;
+    $token = $var['csrf_token'] ?? '';
+    echo '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
+}
+
+// Escape a status/error string and keep its line breaks (script output is often
+// multi-line). Returns HTML-safe markup.
+function gow_msg_html($text) {
+    return nl2br(htmlspecialchars(trim((string)$text), ENT_QUOTES, 'UTF-8'));
+}
+
+function gow_cfg_line_is_skippable($line) {
+    $line = trim($line);
+    return $line === '' || $line[0] === '#';
+}
 
 define('GOW_CFG',        '/boot/config/plugins/gow/gow.cfg');
 define('GOW_SCRIPT_DIR', '/boot/config/plugins/gow/scripts');
+define('DEFAULT_CFG',    '/usr/local/emhttp/plugins/gow/default.cfg');
 define('DEFAULT_APPDATA','/mnt/user/appdata/gow');
 define('DEPLOY_LOG',     '/tmp/gow-deploy.log');
+define('UPDATE_LOG',     '/tmp/gow-update.log');
+define('LOGS_URL',       '/plugins/gow/php/logs.php');
 
-function load_cfg() {
-    $cfg = [
-        'APPDATA'     => DEFAULT_APPDATA,
-        'RENDER_NODE' => '',
-        'GPU_VENDOR'  => '',
-        'GPU_NAME'    => '',
-        'GPU_DRIVER'  => '',
-        'WOLF_DEN_PORT' => '8080',
+require_once '/usr/local/emhttp/plugins/gow/php/health-lib.php';
+
+function parse_cfg_lines($path) {
+    $cfg = [];
+    if (!file_exists($path)) return $cfg;
+    foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        if (strpos($line, '=') === false || gow_cfg_line_is_skippable($line)) continue;
+        [$k, $v] = explode('=', $line, 2);
+        $k = trim($k);
+        $v = trim($v);
+        if (strlen($v) >= 2 && $v[0] === "'" && $v[-1] === "'") {
+            $v = str_replace("'\\''", "'", substr($v, 1, -1));
+        }
+        $cfg[$k] = $v;
+    }
+    return $cfg;
+}
+
+function default_cfg() {
+    static $defaults = null;
+    if ($defaults !== null) return $defaults;
+
+    $defaults = [
+        'APPDATA'           => DEFAULT_APPDATA,
+        'RENDER_NODE'       => '',
+        'GPU_VENDOR'        => '',
+        'GPU_NAME'          => '',
+        'GPU_DRIVER'        => '',
+        'WOLF_DEN_PORT'     => '8080',
         'WOLF_NETWORK_MODE' => 'host',
         'WOLF_NETWORK_NAME' => '',
         'WOLF_NETWORK_IPV4' => '',
-        'DEPLOYED'    => 'false',
+        'STEAM_LIBRARY'     => '/mnt/user/games/steam',
+        'GAMES_LIBRARY'     => '/mnt/user/games',
+        'ROMS_LIBRARY'      => '/mnt/user/games/roms',
+        'BIOS_LIBRARY'      => '/mnt/user/games/bioses',
+        'MEDIA_LIBRARY'     => '/mnt/user/games/media',
+        'LUTRIS_LIBRARY'    => '/mnt/user/games/lutris',
+        'COMPAT_TOOLS_PATH' => DEFAULT_APPDATA . '/compatibilitytools.d',
+        'WOLF_MEMORY_LIMIT'     => '',
+        'WOLF_DEN_MEMORY_LIMIT' => '',
+        'DEPLOYED'          => 'false',
     ];
+    $defaults = array_merge($defaults, parse_cfg_lines(DEFAULT_CFG));
+    return $defaults;
+}
+
+function load_cfg() {
+    $cfg = default_cfg();
     if (!file_exists(GOW_CFG)) return $cfg;
     foreach (file(GOW_CFG, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-        if (strpos($line, '=') === false || $line[0] === '#') continue;
+        if (strpos($line, '=') === false || gow_cfg_line_is_skippable($line)) continue;
         [$k, $v] = explode('=', $line, 2);
         $k = trim($k);
         $v = trim($v);
@@ -51,6 +112,274 @@ function save_cfg($cfg) {
     file_put_contents(GOW_CFG, $out);
 }
 
+function pick_root() {
+    // Trailing slash matches Docker/VM Manager settings (fileTree root matching).
+    return is_dir('/mnt/user/') ? '/mnt/user/' : '/mnt/';
+}
+
+function unraid_share_names() {
+    $shares = [];
+    $root = rtrim(pick_root(), '/');
+    if (!is_dir($root)) {
+        return $shares;
+    }
+    foreach (scandir($root) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+        if (is_dir($root . '/' . $entry)) {
+            $shares[] = $entry;
+        }
+    }
+    sort($shares, SORT_NATURAL | SORT_FLAG_CASE);
+    return $shares;
+}
+
+function gow_path_picker_attrs($pick_root) {
+    $root = htmlspecialchars(rtrim($pick_root, '/') . '/', ENT_QUOTES, 'UTF-8');
+    return 'autocomplete="off" spellcheck="false" '
+         . 'data-pickfolders="true" data-pickfilter="HIDE_FILES_FILTER" '
+         . 'data-pickcloseonfile="true" '
+         . 'data-pickroot="' . $root . '" data-picktop="' . $root . '"';
+}
+
+function valid_host_path($path, $required = false) {
+    $path = rtrim(trim($path), '/');
+    if ($path === '') return !$required;
+    if ($path[0] !== '/') return false;
+    if (strpos($path, '..') !== false) return false;
+    return strncmp($path, '/mnt/', 5) === 0;
+}
+
+function normalize_optional_path($path) {
+    $path = rtrim(trim($path), '/');
+    return $path === '' ? '' : $path;
+}
+
+function discover_existing_path(array $candidates) {
+    foreach ($candidates as $path) {
+        if (is_dir($path)) {
+            return rtrim($path, '/');
+        }
+    }
+    return '';
+}
+
+function smart_path_map() {
+    return [
+        'APPDATA' => ['/mnt/user/appdata/gow', '/mnt/cache/appdata/gow'],
+        'ROMS_LIBRARY' => ['/mnt/user/games/roms', '/mnt/user/roms', '/mnt/user/ROMs', '/mnt/user/retrogaming/roms'],
+        'BIOS_LIBRARY' => ['/mnt/user/games/bioses', '/mnt/user/bioses', '/mnt/user/bios', '/mnt/user/retrogaming/bios'],
+        'STEAM_LIBRARY' => ['/mnt/user/games/steam', '/mnt/user/steam', '/mnt/cache/steam'],
+        'GAMES_LIBRARY' => ['/mnt/user/games', '/mnt/user/Games'],
+        'MEDIA_LIBRARY' => ['/mnt/user/games/media', '/mnt/user/media', '/mnt/user/Media'],
+        'LUTRIS_LIBRARY' => ['/mnt/user/games/lutris', '/mnt/user/appdata/gow/lutris', '/mnt/user/appdata/lutris', '/mnt/cache/appdata/gow/lutris'],
+        'COMPAT_TOOLS_PATH' => ['/mnt/user/appdata/gow/compatibilitytools.d', '/mnt/cache/appdata/gow/compatibilitytools.d'],
+    ];
+}
+
+function apply_smart_path_defaults(array &$cfg) {
+    $changed = [];
+    foreach (smart_path_map() as $key => $candidates) {
+        $current = rtrim($cfg[$key] ?? '', '/');
+        if ($current !== '' && is_dir($current)) {
+            continue;
+        }
+        $found = discover_existing_path($candidates);
+        if ($found !== '' && $found !== $current) {
+            $cfg[$key] = $found;
+            $changed[$key] = $found;
+        }
+    }
+    return $changed;
+}
+
+function path_status_label($path) {
+    $path = rtrim(trim($path), '/');
+    if ($path === '') {
+        return '';
+    }
+    if (is_dir($path)) {
+        return 'exists';
+    }
+    $parent = dirname($path);
+    if (is_dir($parent)) {
+        return 'will create';
+    }
+    return 'missing parent';
+}
+
+function gow_path_field($id, $name, $label, $value, $pick_root, $help = '') {
+    static $shares = null;
+    if ($shares === null) {
+        $shares = unraid_share_names();
+    }
+    $status = path_status_label($value);
+    $status_html = '';
+    if ($status === 'exists') {
+        $status_html = '<span class="gow-path-status ok">Found on disk</span>';
+    } elseif ($status === 'will create') {
+        $status_html = '<span class="gow-path-status warn">Created on install</span>';
+    } elseif ($status === 'missing parent') {
+        $status_html = '<span class="gow-path-status err">Parent share missing</span>';
+    }
+    $share_root = rtrim($pick_root, '/');
+    ?>
+    <div class="gow-field">
+      <label class="gow-label" for="<?= htmlspecialchars($id) ?>"><?= htmlspecialchars($label) ?></label>
+      <div class="gow-path-row">
+        <?php if (!empty($shares)): ?>
+        <select class="gow-select gow-share-select" data-target="<?= htmlspecialchars($id) ?>"
+                aria-label="Jump to Unraid share for <?= htmlspecialchars($label) ?>">
+          <option value="">Share…</option>
+          <?php foreach ($shares as $share): ?>
+            <option value="<?= htmlspecialchars($share_root . '/' . $share) ?>"><?= htmlspecialchars($share) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <?php endif; ?>
+        <input type="text" name="<?= htmlspecialchars($name) ?>" id="<?= htmlspecialchars($id) ?>"
+               class="gow-input gow-path-picker filepicker"
+               value="<?= htmlspecialchars($value) ?>"
+               placeholder="Click to browse folders…"
+               <?= gow_path_picker_attrs($pick_root) ?>>
+        <button type="button" class="gow-btn gow-btn-secondary gow-browse-btn"
+                title="Browse Unraid shares" aria-label="Browse Unraid shares for <?= htmlspecialchars($label) ?>"
+                data-target="<?= htmlspecialchars($id) ?>">📁</button>
+      </div>
+      <?php if ($help !== ''): ?><p class="gow-help"><?= htmlspecialchars($help) ?></p><?php endif; ?>
+      <?= $status_html ?>
+    </div>
+    <?php
+}
+
+function gow_render_health_card(?array $health, array $opts = []) {
+    if ($health === null) {
+        return;
+    }
+    $deployed = !empty($opts['deployed']);
+    $summary = $health['summary'] ?? 'unknown';
+    $title = $deployed ? 'Health check' : 'Pre-install check';
+    ?>
+<div class="gow-card" id="gow-health-card">
+  <div class="gow-health-toolbar">
+    <div class="gow-title" style="margin:0;border:none;padding:0;flex:1"><?= htmlspecialchars($title) ?></div>
+    <span class="gow-health-badge <?= htmlspecialchars($summary) ?>"><?= htmlspecialchars($summary) ?></span>
+  </div>
+  <ul class="gow-health-list" id="gow-health-list">
+    <?php foreach ($health['checks'] ?? [] as $check): ?>
+      <li class="level-<?= htmlspecialchars($check['level']) ?>">
+        <?php
+          $icon = $check['level'] === 'ok' ? '✓' : ($check['level'] === 'fail' ? '✗' : '!');
+          echo htmlspecialchars("{$icon} {$check['label']}");
+        ?>
+        <?php if (!empty($check['hint'])): ?>
+          <div class="hint"><?= htmlspecialchars($check['hint']) ?></div>
+        <?php endif; ?>
+      </li>
+    <?php endforeach; ?>
+  </ul>
+  <?php if (!$deployed): ?>
+  <p class="gow-section-note">Fix failed items before Install.</p>
+  <?php endif; ?>
+</div>
+    <?php
+}
+
+function gow_library_slot_map() {
+    return [
+        'ROMs' => ['key' => 'ROMS_LIBRARY', 'slot' => 'roms'],
+        'BIOS' => ['key' => 'BIOS_LIBRARY', 'slot' => 'bioses'],
+        'Steam' => ['key' => 'STEAM_LIBRARY', 'slot' => 'steam'],
+        'Games' => ['key' => 'GAMES_LIBRARY', 'slot' => 'games'],
+        'Lutris' => ['key' => 'LUTRIS_LIBRARY', 'slot' => 'lutris'],
+        'Media' => ['key' => 'MEDIA_LIBRARY', 'slot' => 'media'],
+        'Compat tools' => ['key' => 'COMPAT_TOOLS_PATH', 'slot' => 'compatibilitytools.d'],
+    ];
+}
+
+function gow_library_mount_display($appdata, $slot, $configured) {
+    $configured = rtrim(trim($configured), '/');
+    if ($configured === '') {
+        return '';
+    }
+    $canonical = rtrim($appdata, '/') . '/' . $slot;
+    if ($configured === $canonical) {
+        return $canonical;
+    }
+    if (is_link($canonical)) {
+        $target = readlink($canonical);
+        if ($target !== false && $target !== '') {
+            return $canonical . ' → ' . $target;
+        }
+    }
+    return $configured;
+}
+
+function library_mount_summary($cfg) {
+    $appdata = rtrim($cfg['APPDATA'] ?? DEFAULT_APPDATA, '/');
+    $active = [];
+    foreach (gow_library_slot_map() as $label => $meta) {
+        $path = $cfg[$meta['key']] ?? '';
+        if ($path === '') {
+            continue;
+        }
+        $active[] = [$label, gow_library_mount_display($appdata, $meta['slot'], $path)];
+    }
+    return $active;
+}
+
+function network_summary($mode, $name, $ipv4) {
+    if ($mode === 'custom') {
+        $label = $name !== '' ? $name : 'custom network';
+        if ($ipv4 !== '') $label .= " · {$ipv4}";
+        return $label;
+    }
+    return ucfirst($mode);
+}
+
+function wolf_cfg_dir($appdata) {
+    return rtrim($appdata, '/') . '/cfg';
+}
+
+function count_paired_clients($appdata) {
+    $cfg_file = wolf_cfg_dir($appdata) . '/config.toml';
+    if (!is_readable($cfg_file)) {
+        return null;
+    }
+    $text = file_get_contents($cfg_file);
+    if ($text === false) {
+        return null;
+    }
+    if (!preg_match_all('/^\[\[paired_clients\]\]/m', $text, $matches)) {
+        return 0;
+    }
+    return count($matches[0]);
+}
+
+function wolf_pairing_identity_ok($appdata) {
+    $dir = wolf_cfg_dir($appdata);
+    return is_file("{$dir}/config.toml")
+        && is_file("{$dir}/key.pem")
+        && is_file("{$dir}/cert.pem");
+}
+
+function pairing_status_label($appdata) {
+    if (!wolf_pairing_identity_ok($appdata)) {
+        return 'Not ready — pair after Wolf finishes starting';
+    }
+    $count = count_paired_clients($appdata);
+    if ($count === null) {
+        return 'Ready';
+    }
+    if ($count === 0) {
+        return 'Ready — no clients paired yet';
+    }
+    if ($count === 1) {
+        return '1 Moonlight client paired';
+    }
+    return "{$count} Moonlight clients paired";
+}
+
 // ── GPU detection ─────────────────────────────────────────────────────────────
 
 function detect_gpus() {
@@ -61,7 +390,8 @@ function detect_gpus() {
         $render_name = basename(dirname($device_dir));
         $render_node = "/dev/dri/{$render_name}";
 
-        $driver = is_link($driver_path) ? basename(readlink($driver_path)) : 'unknown';
+        $link = is_link($driver_path) ? readlink($driver_path) : false;
+        $driver = ($link !== false && $link !== '') ? basename($link) : 'unknown';
         $vendor_map = ['i915' => 'Intel', 'xe' => 'Intel', 'amdgpu' => 'AMD', 'nvidia' => 'NVIDIA'];
         $vendor = $vendor_map[$driver] ?? "Unknown ($driver)";
 
@@ -95,6 +425,45 @@ function detect_gpus() {
 function container_status($name) {
     exec("docker inspect --format '{{.State.Status}}' " . escapeshellarg($name) . " 2>/dev/null", $out, $ret);
     return ($ret === 0 && !empty($out[0])) ? $out[0] : 'not found';
+}
+
+function container_oom_killed($name) {
+    exec("docker inspect --format '{{.State.OOMKilled}}' " . escapeshellarg($name) . " 2>/dev/null", $out, $ret);
+    return $ret === 0 && (($out[0] ?? '') === 'true');
+}
+
+function count_stale_wolf_sessions() {
+    exec('docker ps -a --filter "status=exited" --format "{{.Names}}" 2>/dev/null', $out);
+    $count = 0;
+    foreach ($out as $name) {
+        $name = ltrim(trim($name), '/');
+        if ($name === '' || $name === 'wolf' || $name === 'wolf-den') {
+            continue;
+        }
+        if (strncmp($name, 'Wolf', 4) === 0) {
+            $count++;
+        }
+    }
+    return $count;
+}
+
+function valid_memory_limit($limit) {
+    $limit = trim($limit);
+    if ($limit === '') return true;
+    return (bool)preg_match('/^[0-9]+[bkmgBKMG]?$/', $limit);
+}
+
+function host_memory_gib() {
+    $kb = 0;
+    if (is_readable('/proc/meminfo')) {
+        foreach (file('/proc/meminfo', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            if (strpos($line, 'MemTotal:') === 0) {
+                $kb = (int)preg_replace('/\D/', '', $line);
+                break;
+            }
+        }
+    }
+    return $kb > 0 ? (int)round($kb / 1024 / 1024) : null;
 }
 
 function status_badge($status) {
@@ -132,6 +501,12 @@ function valid_tcp_port($port) {
 
 function cleanup_wolf_runtime_containers() {
     exec('docker rm -f WolfPulseAudio >/dev/null 2>&1 || true');
+}
+
+function cleanup_stale_wolf_sessions() {
+    $script = GOW_SCRIPT_DIR . '/cleanup-wolf-sessions.sh';
+    if (!is_executable($script)) return;
+    exec('bash ' . escapeshellarg($script) . ' 2>&1', $out, $ret);
 }
 
 function valid_network_mode($mode) {
@@ -172,6 +547,7 @@ function has_mdns_conflict() {
 
 define('FAQ_MODESET_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-wayland-support-nvidia_drmmodeset');
 define('FAQ_MDNS_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#moonlight-discovery-and-mdnsavahi-warnings');
+define('FAQ_OOM_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#out-of-memory-oom-crashes');
 define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 
 // ── Action handlers ───────────────────────────────────────────────────────────
@@ -180,6 +556,10 @@ $cfg     = load_cfg();
 $message = '';
 $error   = '';
 $force_setup = false;
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && ($cfg['DEPLOYED'] ?? 'false') !== 'true') {
+    apply_smart_path_defaults($cfg);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -192,6 +572,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cfg['WOLF_NETWORK_MODE'] = $_POST['wolf_network_mode'] ?? 'host';
         $cfg['WOLF_NETWORK_NAME'] = trim($_POST['wolf_network_name'] ?? '');
         $cfg['WOLF_NETWORK_IPV4'] = trim($_POST['wolf_network_ipv4'] ?? '');
+        $cfg['STEAM_LIBRARY']     = normalize_optional_path($_POST['steam_library'] ?? '');
+        $cfg['GAMES_LIBRARY']     = normalize_optional_path($_POST['games_library'] ?? '');
+        $cfg['ROMS_LIBRARY']      = normalize_optional_path($_POST['roms_library'] ?? '');
+        $cfg['BIOS_LIBRARY']      = normalize_optional_path($_POST['bios_library'] ?? '');
+        $cfg['MEDIA_LIBRARY']     = normalize_optional_path($_POST['media_library'] ?? '');
+        $cfg['LUTRIS_LIBRARY']    = normalize_optional_path($_POST['lutris_library'] ?? '');
+        $cfg['COMPAT_TOOLS_PATH'] = normalize_optional_path($_POST['compat_tools_path'] ?? '');
+        $cfg['WOLF_MEMORY_LIMIT'] = strtoupper(trim($_POST['wolf_memory_limit'] ?? ''));
+        $cfg['WOLF_DEN_MEMORY_LIMIT'] = strtoupper(trim($_POST['wolf_den_memory_limit'] ?? ''));
 
         // Look up vendor/name/driver from the selected node
         $gpus = detect_gpus();
@@ -218,12 +607,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Custom Wolf network requires a static IPv4 address.';
         } elseif ($cfg['WOLF_NETWORK_MODE'] === 'custom' && !valid_ipv4($cfg['WOLF_NETWORK_IPV4'])) {
             $error = 'Wolf static IPv4 address is invalid.';
+        } elseif (!valid_host_path($cfg['APPDATA'], true)) {
+            $error = 'Appdata path must be an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['STEAM_LIBRARY'])) {
+            $error = 'Steam library path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['GAMES_LIBRARY'])) {
+            $error = 'Games library path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['ROMS_LIBRARY'])) {
+            $error = 'ROMs library path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['BIOS_LIBRARY'])) {
+            $error = 'BIOS files path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['MEDIA_LIBRARY'])) {
+            $error = 'Media library path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['LUTRIS_LIBRARY'])) {
+            $error = 'Lutris data path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_host_path($cfg['COMPAT_TOOLS_PATH'])) {
+            $error = 'Compatibility tools path must be empty or an absolute path under /mnt/.';
+        } elseif (!valid_memory_limit($cfg['WOLF_MEMORY_LIMIT'])) {
+            $error = 'Wolf memory limit must be empty or like 6G / 8192M.';
+        } elseif (!valid_memory_limit($cfg['WOLF_DEN_MEMORY_LIMIT'])) {
+            $error = 'Wolf Den memory limit must be empty or like 512M.';
         } else {
             save_cfg($cfg);
-            // Run deploy in background; stream to log file.
-            // Use < /dev/null to fully detach stdin so PHP's exec() returns
-            // immediately instead of blocking until the child exits.
-            exec('bash ' . GOW_SCRIPT_DIR . '/deploy.sh > ' . DEPLOY_LOG . ' 2>&1 < /dev/null &');
+            // Run deploy in background; stream to log file (line-buffered when possible).
+            @unlink(DEPLOY_LOG);
+            $deploy_script = GOW_SCRIPT_DIR . '/deploy.sh';
+            $deploy_cmd = 'if command -v stdbuf >/dev/null 2>&1; then '
+                . 'stdbuf -oL -eL bash ' . escapeshellarg($deploy_script)
+                . '; else bash ' . escapeshellarg($deploy_script) . '; fi';
+            exec($deploy_cmd . ' > ' . DEPLOY_LOG . ' 2>&1 < /dev/null &');
             // Use JavaScript redirect — PHP header() can be unreliable inside
             // Unraid's plugin framework when headers have already been sent.
             echo '<script>window.location.href = window.location.pathname + "?deploying=1";</script>';
@@ -248,11 +660,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exec("docker stop wolf-den wolf 2>&1", $out, $ret);
         }
         cleanup_wolf_runtime_containers();
+        cleanup_stale_wolf_sessions();
         $message = $ret === 0 ? 'Wolf stopped.' : 'Stop failed: ' . implode("\n", $out);
 
+    } elseif ($action === 'cleanup_sessions') {
+        exec('bash ' . GOW_SCRIPT_DIR . '/cleanup-wolf-sessions.sh 2>&1', $out, $ret);
+        $message = $ret === 0
+            ? implode("\n", $out)
+            : 'Cleanup failed: ' . implode("\n", $out);
+
     } elseif ($action === 'update') {
-        exec('bash ' . GOW_SCRIPT_DIR . '/update.sh 2>&1', $out, $ret);
-        $message = $ret === 0 ? 'Update complete.' : 'Update failed: ' . implode("\n", $out);
+        @unlink(UPDATE_LOG);
+        $update_script = GOW_SCRIPT_DIR . '/update.sh';
+        $update_cmd = 'if command -v stdbuf >/dev/null 2>&1; then '
+            . 'stdbuf -oL -eL bash ' . escapeshellarg($update_script)
+            . '; else bash ' . escapeshellarg($update_script) . '; fi';
+        exec($update_cmd . ' > ' . UPDATE_LOG . ' 2>&1 < /dev/null &');
+        echo '<script>window.location.href = window.location.pathname + "?updating=1";</script>';
+        exit;
+
+    } elseif ($action === 'reset_defaults') {
+        exec('bash ' . GOW_SCRIPT_DIR . '/reset.sh 2>&1', $out, $ret);
+        if ($ret === 0) {
+            echo '<script>window.location.href = window.location.pathname + "?setup=1&reset=1";</script>';
+            exit;
+        }
+        $error = 'Reset failed: ' . implode("\n", $out);
+
+    } elseif ($action === 'repair_esde') {
+        exec('bash ' . GOW_SCRIPT_DIR . '/repair-esde.sh 2>&1', $out, $ret);
+        $message = $ret === 0
+            ? "ES-DE repair finished:\n" . implode("\n", $out)
+            : 'ES-DE repair failed: ' . implode("\n", $out);
+
+    } elseif ($action === 'fix_all') {
+        exec('bash ' . GOW_SCRIPT_DIR . '/fix-all.sh 2>&1', $out, $ret);
+        if ($ret === 0) {
+            echo '<script>window.location.href = window.location.pathname + "?fixed=1";</script>';
+            exit;
+        }
+        $error = 'Fix-all failed: ' . implode("\n", $out);
 
     } elseif ($action === 'reconfigure') {
         $cfg['DEPLOYED'] = 'false';
@@ -262,15 +709,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Detect if a deploy is in progress
+// Detect if a deploy or update is in progress
 $deploying = isset($_GET['deploying']);
+$updating  = isset($_GET['updating']);
 if ($deploying) {
-    // Check if deploy.sh is still running
-    exec("pgrep -f deploy.sh", $pids);
+    exec("pgrep -f " . escapeshellarg(GOW_SCRIPT_DIR . '/deploy.sh'), $pids);
     if (empty($pids)) {
-        // Reload cfg — DEPLOYED may now be true
         $cfg = load_cfg();
         $deploying = false;
+    }
+}
+if ($updating) {
+    exec("pgrep -f " . escapeshellarg(GOW_SCRIPT_DIR . '/update.sh'), $pids);
+    if (empty($pids)) {
+        $updating = false;
+        $message = 'Update complete.';
     }
 }
 
@@ -291,10 +744,23 @@ $wolf_network_name = $cfg['WOLF_NETWORK_NAME'];
 $wolf_network_ipv4 = $cfg['WOLF_NETWORK_IPV4'];
 $moonlight_host    = ($wolf_network_mode === 'custom' && valid_ipv4($wolf_network_ipv4)) ? $wolf_network_ipv4 : $ip;
 $mdns_conflict   = $deployed && has_mdns_conflict();
+$pick_root       = pick_root();
+$reset_notice    = isset($_GET['reset']);
+$deploy_error    = isset($_GET['deploy_error']);
+$library_mounts  = library_mount_summary($cfg);
+$network_open    = ($wolf_network_mode === 'custom');
+$pairing_status  = pairing_status_label($cfg['APPDATA']);
+$wolf_oom_killed   = container_oom_killed('wolf');
+$stale_sessions    = count_stale_wolf_sessions();
+$host_memory_gib   = host_memory_gib();
+$welcome_notice    = isset($_GET['welcome']);
+$library_open      = !$has_stack;
+$health            = $deployed ? gow_run_health_checks($cfg) : gow_run_setup_health_checks($cfg, $gpus);
+$health_summary    = $health['summary'] ?? '';
+$install_ready     = gow_health_ready($health);
+$fixed_notice      = isset($_GET['fixed']);
 ?>
-<!DOCTYPE html>
-<html>
-<head>
+<link type="text/css" rel="stylesheet" href="/webGui/styles/jquery.filetree.css">
 <style>
   /* Colours come from Unraid's theme palette so the page tracks the active
      theme (white / azure / gray / black). See default-color-palette.css and
@@ -320,6 +786,45 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
                              border: 1px solid var(--input-border-color);
                              background: var(--background-color); color: var(--text-color);
                              font-size: 0.95em; box-sizing: border-box; }
+  .gow-path-picker { cursor: pointer; }
+  .gow-path-row { display: flex; gap: 8px; align-items: stretch; width: 100%; position: relative; flex-wrap: wrap; }
+  .gow-path-row .gow-input { flex: 1; min-width: 12rem; }
+  .gow-share-select { flex: 0 0 auto; width: 7.5rem; max-width: 38%; min-width: 5.5rem; }
+  .gow-browse-btn { flex: 0 0 auto; padding: 7px 12px; line-height: 1; }
+  .gow-details, .gow-details-body, .gow-field { overflow: visible; }
+  .gow-path-row .fileTree,
+  .gow-path-row .fileTree.textarea {
+    position: absolute !important; left: 0 !important; top: 100% !important;
+    width: 100%; min-width: 280px; max-height: 280px; overflow: auto;
+    z-index: 1200; margin-top: 4px;
+    background: var(--background-color); border: 1px solid var(--border-color);
+    border-radius: 5px; box-sizing: border-box;
+  }
+  .gow-path-status { font-size: 0.85em; margin-top: 2px; }
+  .gow-path-status.ok { color: var(--green-800); }
+  .gow-path-status.warn { color: var(--orange-300); }
+  .gow-path-status.err { color: var(--red-800); }
+  .gow-preflight { list-style: none; margin: 0; padding: 0; }
+  .gow-preflight-wrap { margin-bottom: 16px; padding: 14px 18px; border: 1px solid var(--border-color);
+                        border-radius: 6px; background: var(--background-color); }
+  .gow-preflight li { padding: 6px 0; border-bottom: 1px solid var(--border-color); }
+  .gow-preflight li:last-child { border-bottom: none; }
+  .gow-preflight .ok { color: var(--green-800); }
+  .gow-preflight .bad { color: var(--red-800); }
+  .gow-health-list { list-style: none; margin: 0; padding: 0; }
+  .gow-health-list li { padding: 7px 0; border-bottom: 1px solid var(--border-color); font-size: 0.95em; }
+  .gow-health-list li:last-child { border-bottom: none; }
+  .gow-health-list .hint { color: var(--alt-text-color); font-size: 0.9em; }
+  .gow-health-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.85em; font-weight: 700; text-transform: uppercase; }
+  .gow-health-badge.healthy { background: var(--green-100); color: var(--green-800); border: 1px solid var(--green-800); }
+  .gow-health-badge.degraded { background: var(--mild-background-color); color: var(--orange-300); border: 1px solid var(--orange-300); }
+  .gow-health-badge.unhealthy { background: var(--red-100); color: var(--red-800); border: 1px solid var(--red-800); }
+  .gow-health-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .gow-health-list .level-ok { color: var(--green-800); }
+  .gow-health-list .level-warn { color: var(--orange-300); }
+  .gow-health-list .level-fail { color: var(--red-800); }
+  .gow-steps { margin: 0; padding-left: 1.2em; }
+  .gow-steps li { margin-bottom: 8px; }
   .gow-msg       { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
   .gow-msg.ok    { background: var(--green-100); border: 1px solid var(--green-800); color: var(--green-800); }
   .gow-msg.err   { background: var(--red-100);   border: 1px solid var(--red-800);   color: var(--red-800); }
@@ -332,8 +837,9 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
   .gow-log       { background: var(--background-color); color: var(--text-color);
                    border: 1px solid var(--border-color);
                    font-family: monospace; font-size: 0.85em;
-                   padding: 12px; border-radius: 5px; max-height: 300px; overflow-y: auto;
-                   white-space: pre-wrap; word-break: break-all; }
+                   padding: 12px; border-radius: 5px; max-height: 420px; min-height: 8rem;
+                   overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  #gow-progress-status { margin-bottom: 10px; }
   .gow-spinner   { display: inline-block; width: 14px; height: 14px;
                    border: 2px solid var(--border-color);
                    border-top-color: var(--green-500); border-radius: 50%;
@@ -343,30 +849,98 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
   .gow-status-stopped    { color: var(--red-800);   font-weight: bold; }
   .gow-status-restarting { color: var(--orange-300);font-weight: bold; }
   .gow-status-unknown    { color: var(--alt-text-color); font-weight: bold; }
+  .gow-section-note { color: var(--alt-text-color); font-size: 0.9em; margin: 0 0 12px 0; }
+  .gow-log-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .gow-log-toolbar select,
+  .gow-log-toolbar input[type="number"] {
+    padding: 6px 10px; border-radius: 5px;
+    border: 1px solid var(--input-border-color);
+    background: var(--background-color); color: var(--text-color);
+  }
+  .gow-log-toolbar label { display: flex; align-items: center; gap: 6px; color: var(--alt-text-color); font-size: 0.9em; }
+  .gow-log-toolbar .gow-btn { padding: 6px 14px; font-size: 0.9em; }
+  .gow-log-empty { color: var(--alt-text-color); font-style: italic; }
+  .gow-field      { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; }
+  .gow-field .gow-label { min-width: unset; }
+  .gow-details    { margin-top: 14px; border: 1px solid var(--border-color); border-radius: 6px;
+                    background: var(--background-color); }
+  .gow-details > summary {
+    cursor: pointer; padding: 10px 14px; font-weight: 600; list-style: none;
+    color: var(--text-color); user-select: none;
+  }
+  .gow-details > summary::-webkit-details-marker { display: none; }
+  .gow-details > summary::before {
+    content: '▸'; display: inline-block; width: 1em; margin-right: 6px;
+    transition: transform 0.15s ease; color: var(--alt-text-color);
+  }
+  .gow-details[open] > summary::before { transform: rotate(90deg); }
+  .gow-details-body { padding: 0 14px 14px 14px; border-top: 1px solid var(--border-color); }
+  .gow-details-hint { font-weight: normal; color: var(--alt-text-color); font-size: 0.9em; margin-left: 6px; }
+  .gow-kv-table    { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+  .gow-kv-table th { text-align: left; color: var(--alt-text-color); font-weight: 600; padding: 8px 10px 8px 0;
+                     vertical-align: top; white-space: nowrap; width: 110px; }
+  .gow-kv-table td { padding: 8px 0; word-break: break-all; }
+  .gow-link-row    { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .gow-actions-sub { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+  .gow-actions-sub .gow-section-note { margin-bottom: 10px; }
+  @media (max-width: 600px) {
+    .gow-card { padding: 16px; }
+    .gow-path-row { flex-wrap: nowrap; }
+  }
 </style>
-<?php if ($deploying): ?>
-<meta http-equiv="refresh" content="3">
-<?php endif; ?>
-</head>
-<body>
+
 <div class="gow-wrap">
 
 <?php if ($message): ?>
-  <div class="gow-msg ok"><?= htmlspecialchars($message) ?></div>
+  <div class="gow-msg ok" role="status"><?= gow_msg_html($message) ?></div>
 <?php endif; ?>
 <?php if ($error): ?>
-  <div class="gow-msg err"><?= htmlspecialchars($error) ?></div>
+  <div class="gow-msg err" role="alert"><?= gow_msg_html($error) ?></div>
+<?php endif; ?>
+
+<?php if ($reset_notice): ?>
+  <div class="gow-msg ok">Settings reset to defaults. Appdata was left intact — choose paths and install again.</div>
+<?php endif; ?>
+<?php if ($deploy_error): ?>
+  <div class="gow-msg err" role="alert">
+    Install did not finish successfully. Check the log below or run
+    <code>tail -f /tmp/gow-deploy.log</code> on the server, fix the issue, then try Install again.
+  </div>
+  <?php if (file_exists(DEPLOY_LOG)): ?>
+  <div class="gow-log" style="margin-bottom:16px"><?= htmlspecialchars(file_get_contents(DEPLOY_LOG)) ?></div>
+  <?php endif; ?>
+<?php endif; ?>
+<?php if ($fixed_notice): ?>
+  <div class="gow-msg ok">Fix mounts completed — sessions cleaned, mounts re-applied, Wolf restarted.</div>
 <?php endif; ?>
 
 <?php if ($deploying): ?>
-<!-- ── Deploying ─────────────────────────────────────────────────────────── -->
-<div class="gow-card">
-  <div class="gow-title"><span class="gow-spinner"></span> Deploying Wolf + Wolf Den...</div>
-  <p>This may take several minutes, especially on the first run with an NVIDIA GPU.<br>
-     This page will refresh automatically when complete.</p>
-  <?php if (file_exists(DEPLOY_LOG)): ?>
-  <div class="gow-log"><?= htmlspecialchars(file_get_contents(DEPLOY_LOG)) ?></div>
-  <?php endif; ?>
+<div class="gow-card" id="gow-progress-card" data-log-action="deploy">
+  <div class="gow-title"><span class="gow-spinner"></span> Deploying…</div>
+  <p class="gow-section-note" id="gow-progress-status">
+    First install can take several minutes (image pulls; NVIDIA may build a driver volume).
+    This page updates automatically.
+  </p>
+  <div class="gow-log" id="gow-progress-log" role="log" aria-live="polite"><?php
+    if (file_exists(DEPLOY_LOG)) {
+        echo htmlspecialchars(file_get_contents(DEPLOY_LOG));
+    } else {
+        echo "Starting install…\n";
+    }
+  ?></div>
+</div>
+
+<?php elseif ($updating): ?>
+<div class="gow-card" id="gow-progress-card" data-log-action="update">
+  <div class="gow-title"><span class="gow-spinner"></span> Updating images…</div>
+  <p class="gow-section-note" id="gow-progress-status">Pulling Wolf images — this page updates automatically.</p>
+  <div class="gow-log" id="gow-progress-log" role="log" aria-live="polite"><?php
+    if (file_exists(UPDATE_LOG)) {
+        echo htmlspecialchars(file_get_contents(UPDATE_LOG));
+    } else {
+        echo "Starting update…\n";
+    }
+  ?></div>
 </div>
 
 <?php elseif ($deployed): ?>
@@ -392,112 +966,196 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
   </div>
 <?php endif; ?>
 
+<?php if ($wolf_oom_killed): ?>
+  <div class="gow-msg err">
+    <strong>Wolf was stopped by the OOM killer.</strong>
+    The host ran out of memory and Docker killed the Wolf container. Update Wolf images,
+    lower Moonlight bitrate/resolution, prefer H.264 over HEVC on AMD GPUs, enable Unraid swap,
+    or set an optional Wolf memory cap in Reconfigure.
+    <a href="<?= FAQ_OOM_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
+  </div>
+<?php elseif ($host_memory_gib !== null && $host_memory_gib < 12): ?>
+  <div class="gow-msg warn">
+    <strong>Low host RAM (~<?= (int)$host_memory_gib ?> GiB).</strong>
+    Wolf streaming plus emulators can exhaust memory on smaller Unraid boxes.
+    <a href="<?= FAQ_OOM_URL ?>" target="_blank" class="gow-msg-link">OOM prevention tips</a>.
+  </div>
+<?php endif; ?>
+
+<?php if ($stale_sessions > 0): ?>
+  <div class="gow-msg warn">
+    <strong><?= (int)$stale_sessions ?> stale Wolf session container(s) found.</strong>
+    These are stopped app/stream helpers that can still add memory pressure after crashes.
+    Use Advanced → Cleanup stale sessions.
+  </div>
+<?php endif; ?>
+
+<?php if ($welcome_notice): ?>
+  <div class="gow-msg ok">
+    <strong>Wolf is deployed.</strong> Pair Moonlight below, then launch an app from Wolf Den or Moonlight.
+  </div>
+<?php endif; ?>
+
+<?php if ($pairing_url && $wolf_den_status === 'running'): ?>
+  <p class="gow-section-note">
+    <a class="gow-btn-link" href="<?= htmlspecialchars($pairing_url) ?>" target="_blank">Pair Moonlight in Wolf Den</a>
+    · server <strong><?= htmlspecialchars($moonlight_host ?: $ip ?: '') ?></strong>
+  </p>
+<?php endif; ?>
+
+<?php gow_render_health_card($health, ['deployed' => true]); ?>
+
 <div class="gow-card">
-  <div class="gow-title">Games on Whales</div>
+  <div class="gow-title">Status</div>
 
-  <div class="gow-row">
-    <span class="gow-label">Wolf</span>
-    <?= status_badge($wolf_status) ?>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Wolf Den</span>
-    <?= status_badge($wolf_den_status) ?>
-    <?php if ($wolf_den_status === 'running' && $wolf_den_url): ?>
-      &nbsp;
-      <a class="gow-btn-link" href="<?= htmlspecialchars($wolf_den_url) ?>" target="_blank">
-        Open Wolf Den &rarr;
-      </a>
-      <a class="gow-btn-link" href="<?= htmlspecialchars($pairing_url) ?>" target="_blank">
-        Pair Moonlight &rarr;
-      </a>
-    <?php endif; ?>
-  </div>
-  <?php if ($wolf_den_url): ?>
-  <div class="gow-row">
-    <span class="gow-label">Wolf Den URL</span>
-    <a href="<?= htmlspecialchars($wolf_den_url) ?>" target="_blank"><?= htmlspecialchars($wolf_den_url) ?></a>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Pairing URL</span>
-    <a href="<?= htmlspecialchars($pairing_url) ?>" target="_blank"><?= htmlspecialchars($pairing_url) ?></a>
-  </div>
-  <?php endif; ?>
-  <?php if ($moonlight_host): ?>
-  <div class="gow-row">
-    <span class="gow-label">Moonlight host</span>
-    <span><?= htmlspecialchars($moonlight_host) ?></span>
-  </div>
-  <?php endif; ?>
-
-  <div class="gow-row" style="margin-top:10px">
-    <span class="gow-label">GPU</span>
-    <span><?= htmlspecialchars($cfg['GPU_VENDOR'] . ' ' . $cfg['GPU_NAME'] . ' (' . $cfg['RENDER_NODE'] . ')') ?></span>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Appdata</span>
-    <span><?= htmlspecialchars($cfg['APPDATA']) ?></span>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Wolf Den port</span>
-    <span><?= htmlspecialchars($wolf_den_port) ?></span>
-  </div>
-  <div class="gow-row">
-    <span class="gow-label">Wolf network</span>
-    <span>
-      <?= htmlspecialchars(ucfirst($wolf_network_mode)) ?>
-      <?php if ($wolf_network_mode === 'custom'): ?>
-        <?= htmlspecialchars($wolf_network_name) ?>
-        <?php if ($wolf_network_ipv4): ?>
-          (<?= htmlspecialchars($wolf_network_ipv4) ?>)
+  <table class="gow-kv-table">
+    <tr>
+      <th>Wolf</th>
+      <td><?= status_badge($wolf_status) ?></td>
+    </tr>
+    <tr>
+      <th>Wolf Den</th>
+      <td>
+        <?= status_badge($wolf_den_status) ?>
+        <?php if ($wolf_den_status === 'running' && $wolf_den_url): ?>
+          <div class="gow-link-row">
+            <a class="gow-btn-link" href="<?= htmlspecialchars($wolf_den_url) ?>" target="_blank">Open Wolf Den</a>
+            <a class="gow-btn-link" href="<?= htmlspecialchars($pairing_url) ?>" target="_blank">Pair Moonlight</a>
+          </div>
         <?php endif; ?>
-      <?php endif; ?>
-    </span>
-  </div>
+      </td>
+    </tr>
+    <?php if ($moonlight_host): ?>
+    <tr>
+      <th>Moonlight</th>
+      <td><?= htmlspecialchars($moonlight_host) ?></td>
+    </tr>
+    <?php endif; ?>
+    <tr>
+      <th>Pairing</th>
+      <td><?= htmlspecialchars($pairing_status) ?></td>
+    </tr>
+    <tr>
+      <th>GPU</th>
+      <td><?= htmlspecialchars(trim($cfg['GPU_VENDOR'] . ' ' . $cfg['GPU_NAME']) . ' (' . $cfg['RENDER_NODE'] . ')') ?></td>
+    </tr>
+    <tr>
+      <th>Appdata</th>
+      <td><?= htmlspecialchars($cfg['APPDATA']) ?></td>
+    </tr>
+    <tr>
+      <th>Access</th>
+      <td>Port <?= htmlspecialchars($wolf_den_port) ?> · <?= htmlspecialchars(network_summary($wolf_network_mode, $wolf_network_name, $wolf_network_ipv4)) ?></td>
+    </tr>
+    <?php foreach ($library_mounts as $mount): ?>
+    <tr><th><?= htmlspecialchars($mount[0]) ?></th><td><?= htmlspecialchars($mount[1]) ?></td></tr>
+    <?php endforeach; ?>
+  </table>
 </div>
 
 <div class="gow-card">
-  <div class="gow-title">Actions</div>
+  <div class="gow-title">Controls</div>
   <div class="gow-actions">
     <form method="post" style="display:inline">
-      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+      <?php gow_csrf_field(); ?>
       <input type="hidden" name="action" value="start">
       <button type="submit" class="gow-btn gow-btn-primary">Start</button>
     </form>
     <form method="post" style="display:inline">
-      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+      <?php gow_csrf_field(); ?>
       <input type="hidden" name="action" value="stop">
       <button type="submit" class="gow-btn gow-btn-secondary">Stop</button>
     </form>
     <form method="post" style="display:inline">
-      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+      <?php gow_csrf_field(); ?>
       <input type="hidden" name="action" value="update">
       <button type="submit" class="gow-btn gow-btn-secondary">Update Images</button>
     </form>
-    <form method="post" style="display:inline">
-      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
-      <input type="hidden" name="action" value="reconfigure">
-      <button type="submit" class="gow-btn gow-btn-danger"
-              onclick="return confirm('This will let you change GPU, appdata, and network settings. The stack will be restarted. Continue?')">
-        Reconfigure
-      </button>
-    </form>
   </div>
+
+  <details class="gow-details" id="gow-logs-panel">
+    <summary>Logs<span class="gow-details-hint">Wolf, Wolf Den, install</span></summary>
+    <div class="gow-details-body">
+      <div class="gow-log-toolbar">
+        <label class="gow-label" for="gow-log-source" style="min-width:unset">Source</label>
+        <select id="gow-log-source" class="gow-select" style="width:auto;min-width:11rem;flex:1">
+          <option value="tail:wolf">Wolf container</option>
+          <option value="tail:wolf-den">Wolf Den container</option>
+          <option value="deploy">Install log (/tmp/gow-deploy.log)</option>
+          <option value="update">Update log (/tmp/gow-update.log)</option>
+          <option value="autostart">Boot autostart log</option>
+        </select>
+        <label for="gow-log-lines">Lines</label>
+        <input type="number" id="gow-log-lines" min="50" max="500" value="150" style="width:5rem">
+        <label><input type="checkbox" id="gow-log-follow" checked> Follow</label>
+        <button type="button" class="gow-btn gow-btn-secondary" id="gow-log-refresh">Refresh</button>
+      </div>
+      <div class="gow-log gow-log-empty" id="gow-live-log" role="log" aria-live="polite">Open this panel to load logs…</div>
+    </div>
+  </details>
+
+  <details class="gow-details" id="gow-advanced-panel">
+    <summary>Advanced</summary>
+    <div class="gow-details-body">
+      <div class="gow-actions">
+        <form method="post" style="display:inline">
+          <?php gow_csrf_field(); ?>
+          <input type="hidden" name="action" value="fix_all">
+          <button type="submit" class="gow-btn gow-btn-primary"
+                  onclick="return confirm('Cleanup stale sessions, re-apply ROM/BIOS mounts, and restart Wolf?')">
+            Fix mounts
+          </button>
+        </form>
+        <form method="post" style="display:inline">
+          <?php gow_csrf_field(); ?>
+          <input type="hidden" name="action" value="cleanup_sessions">
+          <button type="submit" class="gow-btn gow-btn-secondary">Cleanup sessions</button>
+        </form>
+        <form method="post" style="display:inline">
+          <?php gow_csrf_field(); ?>
+          <input type="hidden" name="action" value="repair_esde">
+          <button type="submit" class="gow-btn gow-btn-secondary"
+                  onclick="return confirm('Restore ES-DE Custom Scripts and re-apply ROM/BIOS mounts?')">
+            Repair ES-DE
+          </button>
+        </form>
+        <form method="post" style="display:inline">
+          <?php gow_csrf_field(); ?>
+          <input type="hidden" name="action" value="reconfigure">
+          <button type="submit" class="gow-btn gow-btn-secondary"
+                  onclick="return confirm('Reopen setup to change GPU and paths?')">
+            Reconfigure
+          </button>
+        </form>
+        <form method="post" style="display:inline">
+          <?php gow_csrf_field(); ?>
+          <input type="hidden" name="action" value="reset_defaults">
+          <button type="submit" class="gow-btn gow-btn-danger"
+                  onclick="return confirm('Reset plugin settings? Appdata is kept.')">
+            Reset to Defaults
+          </button>
+        </form>
+      </div>
+    </div>
+  </details>
 </div>
 
 <?php else: ?>
 <!-- ── Setup form ─────────────────────────────────────────────────────────── -->
 <div class="gow-card">
-  <div class="gow-title">Games on Whales — Setup</div>
+  <div class="gow-title">Setup</div>
+  <p class="gow-section-note">Select your GPU, set appdata and library paths, then Install.</p>
+
+  <?php gow_render_health_card($health, ['deployed' => false]); ?>
 
   <form method="post">
-    <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+    <?php gow_csrf_field(); ?>
     <input type="hidden" name="action" value="save_and_deploy">
 
-    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+    <div class="gow-field">
       <label class="gow-label" for="render_node">GPU</label>
       <?php if (empty($gpus)): ?>
-        <p class="gow-error">No GPU render devices found at /dev/dri/.
-           Make sure your GPU driver is loaded and try again.</p>
+        <p class="gow-error">No GPU render devices found at /dev/dri/. Make sure your GPU driver is loaded and try again.</p>
         <input type="hidden" name="render_node" value="">
       <?php else: ?>
         <select name="render_node" id="render_node" class="gow-select">
@@ -511,54 +1169,91 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
       <?php endif; ?>
     </div>
 
-    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
-      <label class="gow-label" for="appdata">Appdata path</label>
-      <input type="text" name="appdata" id="appdata" class="gow-input"
-             value="<?= htmlspecialchars($cfg['APPDATA']) ?>"
-             placeholder="/mnt/user/appdata/gow">
-    </div>
+    <?php gow_path_field('appdata', 'appdata', 'Appdata', $cfg['APPDATA'], $pick_root, 'Wolf config, certs, and saved state.'); ?>
 
-    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
+    <div class="gow-field">
       <label class="gow-label" for="wolf_den_port">Wolf Den port</label>
       <input type="number" name="wolf_den_port" id="wolf_den_port" class="gow-input"
              value="<?= htmlspecialchars($wolf_den_port) ?>"
              min="1" max="65535" step="1">
+      <p class="gow-help">Web UI for pairing and managing apps. Default is 8080.</p>
     </div>
 
-    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
-      <label class="gow-label" for="wolf_network_mode">Wolf network mode</label>
-      <select name="wolf_network_mode" id="wolf_network_mode" class="gow-select">
-        <option value="host" <?= ($wolf_network_mode === 'host') ? 'selected' : '' ?>>Host</option>
-        <option value="bridge" <?= ($wolf_network_mode === 'bridge') ? 'selected' : '' ?>>Bridge</option>
-        <option value="custom" <?= ($wolf_network_mode === 'custom') ? 'selected' : '' ?>>Custom Docker network</option>
-      </select>
-      <p class="gow-help">Bridge publishes Wolf's default Moonlight ports on the host. Use a custom Docker network such as br0 with a static IP when another Sunshine/GameStream server already uses the Unraid host IP.</p>
-    </div>
+    <details class="gow-details" id="gow-library-details"<?= $library_open ? ' open' : '' ?>>
+      <summary>Library &amp; game folders<span class="gow-details-hint">ROMs, Steam, Lutris…</span></summary>
+      <div class="gow-details-body">
+        <p class="gow-section-note">Pick a share from the dropdown, then click the path field or folder icon to browse subfolders. Wolf always uses paths under your GoW appdata folder; if you choose a folder elsewhere, the plugin symlinks it there on install.</p>
 
-    <div class="gow-row gow-network-custom" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
-      <label class="gow-label" for="wolf_network_name">Docker network / interface</label>
-      <input type="text" name="wolf_network_name" id="wolf_network_name" class="gow-input"
-             value="<?= htmlspecialchars($wolf_network_name) ?>"
-             list="gow_networks"
-             placeholder="br0">
-      <datalist id="gow_networks">
-        <?php foreach ($docker_networks as $network): ?>
-          <option value="<?= htmlspecialchars($network) ?>"></option>
-        <?php endforeach; ?>
-      </datalist>
-    </div>
+        <?php
+          gow_path_field('roms_library', 'roms_library', 'ROMs', $cfg['ROMS_LIBRARY'], $pick_root);
+          gow_path_field('bios_library', 'bios_library', 'BIOS files', $cfg['BIOS_LIBRARY'], $pick_root);
+          gow_path_field('steam_library', 'steam_library', 'Steam', $cfg['STEAM_LIBRARY'], $pick_root);
+          gow_path_field('games_library', 'games_library', 'PC games', $cfg['GAMES_LIBRARY'], $pick_root);
+          gow_path_field('lutris_library', 'lutris_library', 'Lutris data', $cfg['LUTRIS_LIBRARY'], $pick_root,
+              'Default: ' . DEFAULT_APPDATA . '/lutris');
+          gow_path_field('media_library', 'media_library', 'Media', $cfg['MEDIA_LIBRARY'], $pick_root);
+          gow_path_field('compat_tools_path', 'compat_tools_path', 'Compatibility tools', $cfg['COMPAT_TOOLS_PATH'], $pick_root);
+        ?>
+      </div>
+    </details>
 
-    <div class="gow-row gow-network-custom" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
-      <label class="gow-label" for="wolf_network_ipv4">Wolf static IPv4</label>
-      <input type="text" name="wolf_network_ipv4" id="wolf_network_ipv4" class="gow-input"
-             value="<?= htmlspecialchars($wolf_network_ipv4) ?>"
-             placeholder="192.168.1.50">
-    </div>
+    <details class="gow-details" id="gow-network-details"<?= $network_open ? ' open' : '' ?>>
+      <summary>Network<span class="gow-details-hint"><?= htmlspecialchars(network_summary($wolf_network_mode, $wolf_network_name, $wolf_network_ipv4)) ?></span></summary>
+      <div class="gow-details-body">
+        <div class="gow-field">
+          <label class="gow-label" for="wolf_network_mode">Wolf network mode</label>
+          <select name="wolf_network_mode" id="wolf_network_mode" class="gow-select">
+            <option value="host" <?= ($wolf_network_mode === 'host') ? 'selected' : '' ?>>Host (recommended)</option>
+            <option value="bridge" <?= ($wolf_network_mode === 'bridge') ? 'selected' : '' ?>>Bridge</option>
+            <option value="custom" <?= ($wolf_network_mode === 'custom') ? 'selected' : '' ?>>Custom Docker network</option>
+          </select>
+          <p class="gow-help">Use custom networking (e.g. br0) if another GameStream server already uses the Unraid IP.</p>
+        </div>
+
+        <div class="gow-field gow-network-custom">
+          <label class="gow-label" for="wolf_network_name">Docker network</label>
+          <input type="text" name="wolf_network_name" id="wolf_network_name" class="gow-input"
+                 value="<?= htmlspecialchars($wolf_network_name) ?>"
+                 list="gow_networks"
+                 placeholder="br0">
+          <datalist id="gow_networks">
+            <?php foreach ($docker_networks as $network): ?>
+              <option value="<?= htmlspecialchars($network) ?>"></option>
+            <?php endforeach; ?>
+          </datalist>
+        </div>
+
+        <div class="gow-field gow-network-custom">
+          <label class="gow-label" for="wolf_network_ipv4">Wolf static IP</label>
+          <input type="text" name="wolf_network_ipv4" id="wolf_network_ipv4" class="gow-input"
+                 value="<?= htmlspecialchars($wolf_network_ipv4) ?>"
+                 placeholder="192.168.1.50">
+        </div>
+      </div>
+    </details>
+
+    <details class="gow-details">
+      <summary>Memory limits (optional)<span class="gow-details-hint">Protect host from OOM</span></summary>
+      <div class="gow-details-body">
+        <p class="gow-help">Leave blank for unlimited memory. On 16 GiB Unraid boxes, <code>6G</code> for Wolf is a reasonable cap so a streaming leak cannot freeze the whole server.</p>
+        <div class="gow-field">
+          <label class="gow-label" for="wolf_memory_limit">Wolf cap</label>
+          <input type="text" name="wolf_memory_limit" id="wolf_memory_limit" class="gow-input"
+                 value="<?= htmlspecialchars($cfg['WOLF_MEMORY_LIMIT']) ?>"
+                 placeholder="e.g. 6G">
+        </div>
+        <div class="gow-field">
+          <label class="gow-label" for="wolf_den_memory_limit">Wolf Den cap</label>
+          <input type="text" name="wolf_den_memory_limit" id="wolf_den_memory_limit" class="gow-input"
+                 value="<?= htmlspecialchars($cfg['WOLF_DEN_MEMORY_LIMIT']) ?>"
+                 placeholder="e.g. 512M">
+        </div>
+      </div>
+    </details>
 
     <?php if ($cfg['GPU_VENDOR'] === 'NVIDIA'): ?>
     <p class="gow-warn">
-      ⚠ NVIDIA GPU selected. On first install, a driver volume will be built — this can take
-      5–10 minutes. The page will show progress while it runs.
+      NVIDIA selected — first install may build a driver volume (5–10 minutes).
     </p>
     <?php endif; ?>
 
@@ -568,18 +1263,16 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
     ?>
     <?php if ($has_nvidia && !nvidia_drm_modeset_ok()): ?>
     <p class="gow-error">
-      ⚠ NVIDIA detected but <code>nvidia_drm.modeset</code> is not enabled. Wolf's
-      Wayland compositor will not work until you set it. Open
-      <strong>Tools &gt; System Drivers</strong>, edit <code>nvidia_drm</code>,
-      set the Modprobe.d Config File to <code>options nvidia_drm modeset=1</code>,
-      apply, and reboot before installing.
+      <code>nvidia_drm.modeset</code> is not enabled. Set it under <strong>Tools &gt; System Drivers</strong> before installing.
       <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
     </p>
     <?php endif; ?>
 
     <div class="gow-actions" style="margin-top:16px">
       <?php if (!empty($gpus)): ?>
-        <button type="submit" class="gow-btn gow-btn-primary">Install</button>
+        <button type="submit" class="gow-btn gow-btn-primary"<?= $install_ready ? '' : ' title="Fix failed health checks above first"' ?>>
+          Install with these settings
+        </button>
       <?php endif; ?>
     </div>
   </form>
@@ -590,18 +1283,253 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
 </div>
 <script>
 (() => {
-  const mode = document.getElementById('wolf_network_mode');
-  const customRows = document.querySelectorAll('.gow-network-custom');
-  if (!mode) return;
+  const card = document.getElementById('gow-progress-card');
+  if (!card) return;
+  const action = card.getAttribute('data-log-action') || 'deploy';
+  const logEl = document.getElementById('gow-progress-log');
+  const statusEl = document.getElementById('gow-progress-status');
+  const pollUrl = <?= json_encode(LOGS_URL) ?> + '?action=' + encodeURIComponent(action);
+  const pollMs = 2000;
+  let stallTicks = 0;
+  let lastText = logEl ? logEl.textContent : '';
 
-  const syncNetworkFields = () => {
-    const show = mode.value === 'custom';
-    customRows.forEach(row => { row.style.display = show ? 'flex' : 'none'; });
+  const scrollLog = () => {
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
   };
 
-  mode.addEventListener('change', syncNetworkFields);
-  syncNetworkFields();
+  const poll = () => {
+    fetch(pollUrl, { cache: 'no-store', credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (logEl && typeof data.text === 'string') {
+          logEl.textContent = data.text || 'Waiting for output…\n';
+          scrollLog();
+          if (data.text === lastText) {
+            stallTicks += 1;
+          } else {
+            stallTicks = 0;
+            lastText = data.text;
+          }
+        }
+        if (data.active) {
+          if (statusEl && stallTicks >= 8) {
+            statusEl.textContent = 'Still working — large steps (permissions, image pull, or NVIDIA driver build) can take several minutes with little new output.';
+          }
+          setTimeout(poll, pollMs);
+          return;
+        }
+        if (statusEl) {
+          statusEl.textContent = 'Finished — loading dashboard…';
+        }
+        const failed = (data.text || '').indexOf('ERROR:') !== -1;
+        const target = window.location.pathname
+          + (failed ? '?setup=1&deploy_error=1' : '');
+        window.setTimeout(() => { window.location.href = target; }, 800);
+      })
+      .catch(() => setTimeout(poll, pollMs + 1000));
+  };
+
+  scrollLog();
+  setTimeout(poll, 800);
+})();
+
+(() => {
+  const logEl = document.getElementById('gow-live-log');
+  const logPanel = document.getElementById('gow-logs-panel');
+  if (logEl && logPanel) {
+    const sourceEl = document.getElementById('gow-log-source');
+    const linesEl = document.getElementById('gow-log-lines');
+    const followEl = document.getElementById('gow-log-follow');
+    const refreshBtn = document.getElementById('gow-log-refresh');
+    const logsUrl = <?= json_encode(LOGS_URL) ?>;
+    const pollMs = 3000;
+    let timer = null;
+
+    const scrollIfFollow = (wasAtBottom) => {
+      if (followEl && followEl.checked && wasAtBottom) {
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    };
+
+    const fetchLogs = async () => {
+      const src = sourceEl ? sourceEl.value : 'tail:wolf';
+      let url;
+      if (src.startsWith('tail:')) {
+        const container = src.slice(5);
+        const lines = linesEl ? Math.min(500, Math.max(50, parseInt(linesEl.value, 10) || 150)) : 150;
+        url = `${logsUrl}?action=tail&container=${encodeURIComponent(container)}&lines=${lines}`;
+      } else {
+        url = `${logsUrl}?action=${encodeURIComponent(src)}`;
+      }
+      const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
+      try {
+        const resp = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+        const data = await resp.json();
+        logEl.classList.remove('gow-log-empty');
+        if (data.error) {
+          logEl.textContent = data.error;
+          return;
+        }
+        let text = (data.text && String(data.text).trim() !== '') ? data.text : '(no output yet)';
+        if (src.startsWith('tail:') && data.running === false) {
+          text += '\n\n(container is not running or has no logs yet)';
+        }
+        if (!src.startsWith('tail:') && data.active) {
+          text += '\n\n(in progress…)';
+        }
+        logEl.textContent = text;
+        scrollIfFollow(wasAtBottom);
+      } catch (err) {
+        logEl.classList.remove('gow-log-empty');
+        logEl.textContent = 'Could not load logs. Check that Docker is running.';
+      }
+    };
+
+    const stopPoll = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const startPoll = () => {
+      stopPoll();
+      fetchLogs();
+      timer = setInterval(fetchLogs, pollMs);
+    };
+
+    if (sourceEl) sourceEl.addEventListener('change', startPoll);
+    if (linesEl) linesEl.addEventListener('change', fetchLogs);
+    if (refreshBtn) refreshBtn.addEventListener('click', fetchLogs);
+    if (followEl) {
+      followEl.addEventListener('change', () => {
+        if (followEl.checked) logEl.scrollTop = logEl.scrollHeight;
+      });
+    }
+
+    logPanel.addEventListener('toggle', () => {
+      if (logPanel.open) {
+        startPoll();
+      } else {
+        stopPoll();
+        logEl.textContent = 'Open this panel to load logs…';
+        logEl.classList.add('gow-log-empty');
+      }
+    });
+
+    if (logPanel.open) {
+      startPoll();
+    }
+  }
+
+  const mode = document.getElementById('wolf_network_mode');
+  const networkDetails = document.getElementById('gow-network-details');
+  const customRows = document.querySelectorAll('.gow-network-custom');
+  if (mode) {
+    const syncNetworkFields = () => {
+      const show = mode.value === 'custom';
+      customRows.forEach(row => { row.style.display = show ? 'flex' : 'none'; });
+      if (show && networkDetails) networkDetails.open = true;
+    };
+    mode.addEventListener('change', syncNetworkFields);
+    syncNetworkFields();
+  }
+})();
+
+(function () {
+  const FILETREE_SCRIPTS = [
+    '/webGui/scripts/jquery.filetree.js',
+    '/plugins/dynamix/javascript/jquery.filetree.js',
+  ];
+
+  function gowLoadFileTree(done) {
+    if (window.jQuery && jQuery.fn && jQuery.fn.fileTreeAttach) {
+      done();
+      return;
+    }
+    const pending = document.querySelector('script[data-gow-filetree-loader]');
+    if (pending) {
+      pending.addEventListener('load', () => done(), { once: true });
+      pending.addEventListener('error', () => done(), { once: true });
+      return;
+    }
+    let idx = 0;
+    const tryNext = () => {
+      if (window.jQuery && jQuery.fn && jQuery.fn.fileTreeAttach) {
+        done();
+        return;
+      }
+      if (idx >= FILETREE_SCRIPTS.length) {
+        console.warn('GoW: jquery.filetree.js not available — folder browse disabled');
+        done();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = FILETREE_SCRIPTS[idx++];
+      script.dataset.gowFiletreeLoader = '1';
+      script.onload = () => tryNext();
+      script.onerror = () => tryNext();
+      document.head.appendChild(script);
+    };
+    tryNext();
+  }
+
+  function gowInitShareSelects(root) {
+    (root || document).querySelectorAll('.gow-share-select').forEach((select) => {
+      if (select.dataset.gowShareBound) return;
+      select.dataset.gowShareBound = '1';
+      select.addEventListener('change', () => {
+        const path = select.value;
+        if (!path) return;
+        const input = document.getElementById(select.dataset.target || '');
+        if (input) {
+          input.value = path;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        select.selectedIndex = 0;
+      });
+    });
+  }
+
+  function gowInitPathPickers(root) {
+    if (!window.jQuery || !jQuery.fn || !jQuery.fn.fileTreeAttach) return;
+    jQuery(root || document).find('input.gow-path-picker').each(function () {
+      const $input = jQuery(this);
+      if ($input.data('gowFileTree')) return;
+      $input.fileTreeAttach(null, null, function (folder) {
+        $input.val(folder).trigger('change');
+        jQuery(document).trigger('close.fileTree');
+      });
+      $input.data('gowFileTree', true);
+    });
+  }
+
+  function gowInitPathControls(root) {
+    gowInitShareSelects(root);
+    gowLoadFileTree(() => gowInitPathPickers(root));
+  }
+
+  jQuery(function () {
+    gowInitPathControls(document);
+
+    document.querySelectorAll('.gow-browse-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const input = document.getElementById(btn.getAttribute('data-target') || '');
+        if (!input) return;
+        gowLoadFileTree(() => {
+          gowInitPathPickers(input.closest('.gow-field') || document);
+          input.focus();
+          input.click();
+        });
+      });
+    });
+
+    document.querySelectorAll('details.gow-details').forEach((panel) => {
+      panel.addEventListener('toggle', () => {
+        if (panel.open) gowInitPathControls(panel);
+      });
+    });
+  });
 })();
 </script>
-</body>
-</html>
