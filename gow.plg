@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "Dadud">
-<!ENTITY version   "2026.05.31a">
+<!ENTITY version   "2026.05.31k">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -23,7 +23,45 @@
   support="https://discord.gg/kRGUDHNHt2"
 >
 
-  <CHANGES>
+  <CHANGES><![CDATA[
+### 2026.05.31k
+- ES-DE launchers: fullscreen for all standalone emulators (Dolphin, Cemu, Xemu, Citron, PCSX2, Xenia, RetroArch); seed RPCS3 config.yml with Start games in fullscreen mode
+
+### 2026.05.31j
+- ES-DE repair: seed Wolf gamepad configs for Dolphin (GC/Wii), PCSX2, RPCS3, Xemu; fix RetroArch Wolf D-pad (Hat0); re-enable autoconfig seed
+
+### 2026.05.31i
+- ES-DE: seed profile launchers under /home/retro/Applications/launchers (Xenia path fix, ROM-aware Dolphin/PCSX2/RPCS3/Cemu/Xemu); es_systems.xml and Custom Scripts use profile paths
+- fix-all: ES-DE repair only (Pegasus deferred); package required_cores.py and bundled launchers in plugin install
+
+### 2026.05.31h
+- ES-DE: full Custom Scripts gamelist (all GOW launchers + system compatibility text); per-platform standalone emulator commands; install RetroArch cores for rom_launcher
+
+### 2026.05.31g
+- ES-DE/Pegasus repair: regenerate Custom Scripts emulator gamelist from image launchers; seed RetroArch cores into Wolf profiles; seed Pegasus Applications metadata
+
+### 2026.05.31f
+- Wolf UI: add RUN_GAMESCOPE=1 via mount presets to avoid libwayland-cursor crash on some NVIDIA hosts (stream disconnect ~2s after launch)
+
+### 2026.05.31e
+- Fix Prism/ROM Docker bind mounts: resolve appdata symlinks to real host paths; create missing library directories
+- Add repair-pegasus.sh (Fix mounts pipeline) to regenerate Pegasus game_dirs and ROM collection metadata
+- ES-DE repair: skip backup profile dirs; stop forcing Custom Scripts as startup system; Pegasus gets /home/retro/ROMs mount alias
+
+### 2026.05.31d
+- Add configurable Prism Launcher library path (PRISM_LIBRARY) in setup; mount presets bind it to /games/prismlauncher
+
+### 2026.05.31c
+- Run plugin Python via Docker on Unraid (no NerdPack/python3 required) for mount presets and ES-DE repair
+- Fix ES-DE repair for Wolf v0 profiles under profile-data/.../ES-DE; detect ES-DE title and :edge image
+- Improve ROM library auto-detect (prefer folders with nes/snes/… platform subdirs, including nested roms/roms)
+- Fix mounts now runs ES-DE repair; deploy seeds ROM platforms when a ROM library path is set
+- Health check warns when ROM path lacks platform subfolders or ES-DE missing host ROM bind
+
+### 2026.05.31b
+- Fix plugin install XML parse error (wrap CHANGES in CDATA; bare & in changelog broke Unraid parser)
+- Add wipe-full.sh and ROM library config generator scripts to the plugin bundle
+
 ### 2026.05.31
 - Add configurable library paths with games-share defaults and auto-discovery of existing share folders (user and common cache paths)
 - Symlink external library folders into GoW appdata; apply mount presets to Wolf config.toml for emulators and game stores
@@ -122,7 +160,7 @@
 - Configurable appdata path
 - Persistent udev rules and auto-start via /boot/config/go
 - Requires Unraid 6.12+
-  </CHANGES>
+]]></CHANGES>
 
   <!-- Hard dependency: Compose Manager plugin must be installed first. -->
   <FILE Run="/bin/bash">
@@ -131,7 +169,7 @@
         echo ""
         echo "-----------------------------------------------------------"
         echo " &name; has not been installed!"
-        echo " Install the 'Compose Manager' plugin from Community"
+        echo " Install the Compose Manager plugin from Community"
         echo " Applications first, then retry."
         echo "-----------------------------------------------------------"
         echo ""
@@ -143,7 +181,7 @@
   <!-- Remove stale packages from previous versions -->
   <FILE Run="/bin/bash">
     <INLINE>
-      rm -f $(ls &plugin;/packages/settings-ui-*.txz 2>/dev/null | grep -v '&version;') 2>/dev/null || true
+      rm -f $(ls &plugin;/packages/settings-ui-*.txz 2>/dev/null | grep -v "&version;") 2>/dev/null || true
     </INLINE>
   </FILE>
 
@@ -192,14 +230,34 @@
     <URL>&gitPkgURL;/scripts/apply-mount-presets.py</URL>
   </FILE>
 
+  <FILE Name="&script_dir;/run-python3.sh">
+    <URL>&gitPkgURL;/scripts/run-python3.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/rom-platform-dirs.sh">
+    <URL>&gitPkgURL;/scripts/rom-platform-dirs.sh</URL>
+  </FILE>
+
   <FILE Name="&script_dir;/pairing-state.sh">
     <URL>&gitPkgURL;/scripts/pairing-state.sh</URL>
   </FILE>
   <FILE Name="&script_dir;/repair-esde.sh">
     <URL>&gitPkgURL;/scripts/repair-esde.sh</URL>
   </FILE>
+  <FILE Name="&script_dir;/repair-pegasus.sh">
+    <URL>&gitPkgURL;/scripts/repair-pegasus.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/repair-frontend-lib.sh">
+    <URL>&gitPkgURL;/scripts/repair-frontend-lib.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/install_retroarch_cores.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/install_retroarch_cores.sh</URL>
+  </FILE>
   <FILE Name="&script_dir;/detect-paths.sh">
     <URL>&gitPkgURL;/scripts/detect-paths.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/diagnose-esde-launch.sh">
+    <URL>&gitPkgURL;/scripts/diagnose-esde-launch.sh</URL>
   </FILE>
   <FILE Name="&script_dir;/health-check.sh">
     <URL>&gitPkgURL;/scripts/health-check.sh</URL>
@@ -214,6 +272,96 @@
     <URL>&gitPkgURL;/scripts/apply-ui.sh</URL>
   </FILE>
 
+  <FILE Name="&script_dir;/wipe-full.sh">
+    <URL>&gitPkgURL;/scripts/wipe-full.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/dev-sync.sh">
+    <URL>&gitPkgURL;/scripts/dev-sync.sh</URL>
+  </FILE>
+
+  <FILE Name="&script_dir;/rom-config/rom_platforms.py">
+    <URL>&gitPkgURL;/scripts/rom-config/rom_platforms.py</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/generate_rom_library_configs.py">
+    <URL>&gitPkgURL;/scripts/rom-config/generate_rom_library_configs.py</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/seed_retroarch_autoconfig.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/seed_retroarch_autoconfig.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/patch_retroarch_cfg.py">
+    <URL>&gitPkgURL;/scripts/rom-config/patch_retroarch_cfg.py</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/autoconfig/udev/Wolf_X-Box_One_(virtual)_pad.cfg">
+    <URL>&gitPkgURL;/scripts/rom-config/autoconfig/udev/Wolf_X-Box_One_(virtual)_pad.cfg</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/autoconfig/udev/Wolf_DualSense_(virtual)_pad.cfg">
+    <URL>&gitPkgURL;/scripts/rom-config/autoconfig/udev/Wolf_DualSense_(virtual)_pad.cfg</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/autoconfig/udev/Wolf_Nintendo_(virtual)_pad.cfg">
+    <URL>&gitPkgURL;/scripts/rom-config/autoconfig/udev/Wolf_Nintendo_(virtual)_pad.cfg</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/seed_emulator_configs.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/seed_emulator_configs.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/dolphin_Dolphin.ini">
+    <URL>&gitPkgURL;/scripts/emulator-config/dolphin_Dolphin.ini</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/dolphin_GCPad_Wolf_XBox_One.ini">
+    <URL>&gitPkgURL;/scripts/emulator-config/dolphin_GCPad_Wolf_XBox_One.ini</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/dolphin_Wiimote_Wolf_XBox_One.ini">
+    <URL>&gitPkgURL;/scripts/emulator-config/dolphin_Wiimote_Wolf_XBox_One.ini</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/pcsx2_PCSX2.ini">
+    <URL>&gitPkgURL;/scripts/emulator-config/pcsx2_PCSX2.ini</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/rpcs3_config.yml">
+    <URL>&gitPkgURL;/scripts/emulator-config/rpcs3_config.yml</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/rpcs3_Default.yml">
+    <URL>&gitPkgURL;/scripts/emulator-config/rpcs3_Default.yml</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/rpcs3_CurrentSettings.ini">
+    <URL>&gitPkgURL;/scripts/emulator-config/rpcs3_CurrentSettings.ini</URL>
+  </FILE>
+  <FILE Name="&script_dir;/emulator-config/xemu_xemu.toml">
+    <URL>&gitPkgURL;/scripts/emulator-config/xemu_xemu.toml</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/required_cores.py">
+    <URL>&gitPkgURL;/scripts/rom-config/required_cores.py</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/rom_launcher.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/rom_launcher.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/retroarch.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/retroarch.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/dolphin.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/dolphin.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/pcsx2.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/pcsx2.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/rpcs3.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/rpcs3.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/cemu.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/cemu.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/citron.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/citron.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/xemu.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/xemu.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/launchers/xenia.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/launchers/xenia.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/rom-config/gow_refresh_rom_library.sh">
+    <URL>&gitPkgURL;/scripts/rom-config/gow_refresh_rom_library.sh</URL>
+  </FILE>
+
   <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md).
        SHA256/MD5 are filled in by the release workflow after building the txz. -->
   <FILE Name="&plugin;/packages/settings-ui-&version;.txz">
@@ -224,6 +372,8 @@
   <FILE Run="/bin/bash">
     <INLINE>
       chmod +x &script_dir;/*.sh
+      chmod +x &script_dir;/rom-config/*.sh 2>/dev/null || true
+      chmod +x &script_dir;/rom-config/launchers/*.sh 2>/dev/null || true
 
       echo "╔══════════════════════════╗"
       echo "║  Installing GoW Plugin   ║"

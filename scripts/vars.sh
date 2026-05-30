@@ -2,7 +2,7 @@
 # vars.sh — shared environment for all GoW plugin scripts
 
 export GOW_NAME="gow"
-export GOW_VERSION="2026.05.31a"
+export GOW_VERSION="2026.05.31k"
 export GOW_ORG="Dadud"
 export GOW_PLUGIN="/boot/config/plugins/gow"
 export GOW_CFG="${GOW_PLUGIN}/gow.cfg"
@@ -16,6 +16,7 @@ export DEFAULT_ROMS_LIBRARY="/mnt/user/games/roms"
 export DEFAULT_BIOS_LIBRARY="/mnt/user/games/bioses"
 export DEFAULT_MEDIA_LIBRARY="/mnt/user/games/media"
 export DEFAULT_LUTRIS_LIBRARY="/mnt/user/games/lutris"
+export DEFAULT_PRISM_LIBRARY="/mnt/user/games/prismlauncher"
 export DEFAULT_COMPAT_TOOLS_PATH="${DEFAULT_APPDATA}/compatibilitytools.d"
 export DEFAULT_WOLF_IMAGE="ghcr.io/games-on-whales/wolf:stable"
 export DEFAULT_WOLF_DEN_IMAGE="ghcr.io/games-on-whales/wolf-den:stable"
