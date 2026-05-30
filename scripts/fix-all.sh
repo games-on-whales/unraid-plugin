@@ -1,5 +1,5 @@
 #!/bin/bash
-# fix-all.sh — cleanup stale sessions, re-apply mount presets, restart Wolf.
+# fix-all.sh — cleanup stale sessions, re-apply mount presets, repair ES-DE, restart Wolf.
 
 set -euo pipefail
 
@@ -27,6 +27,7 @@ run_step() {
 
 run_step "${SCRIPT_DIR}/cleanup-wolf-sessions.sh" "Cleaning stale Wolf session containers"
 run_step "${SCRIPT_DIR}/apply-mount-presets.sh" "Re-applying library mount presets"
+run_step "${SCRIPT_DIR}/repair-esde.sh" "Repairing ES-DE ROM platforms and Custom Scripts"
 
 if [[ -f "$COMPOSE_FILE" ]]; then
     info "Restarting Wolf + Wolf Den"

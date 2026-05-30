@@ -187,6 +187,7 @@ function gow_run_health_checks(array $cfg) {
     );
 
     $checks[] = gow_health_audit_library_mounts($cfg, $cfg_file);
+    $checks[] = gow_health_audit_rom_library_path($cfg);
 
     $sock = $appdata . '/run/wolf.sock';
     $sock_ok = gow_is_unix_socket($sock);
@@ -201,6 +202,55 @@ function gow_run_health_checks(array $cfg) {
         'checks'  => $checks,
         'at'      => gmdate('c'),
     ];
+}
+
+function gow_health_esde_titles_present(string $text): bool {
+    return strpos($text, 'title = "EmulationStation"') !== false
+        || strpos($text, 'title = "ES-DE"') !== false;
+}
+
+function gow_health_rom_platform_score(string $root): int {
+    static $platforms = [
+        '3do', 'amiga', 'arcade', 'atari2600', 'dreamcast', 'gb', 'gba', 'gbc', 'gc',
+        'genesis', 'n64', 'nes', 'psx', 'psp', 'saturn', 'snes', 'wii',
+    ];
+    if ($root === '' || !is_dir($root)) {
+        return 0;
+    }
+    $score = 0;
+    foreach ($platforms as $platform) {
+        if (is_dir($root . '/' . $platform)) {
+            $score++;
+        }
+    }
+    return $score;
+}
+
+function gow_health_audit_rom_library_path(array $cfg) {
+    $roms = rtrim($cfg['ROMS_LIBRARY'] ?? '', '/');
+    if ($roms === '') {
+        return gow_health_item('ok', 'ROM library path', '');
+    }
+    if (!is_dir($roms)) {
+        return gow_health_item('warn', 'ROM library path', "Not found: {$roms}");
+    }
+    $score = gow_health_rom_platform_score($roms);
+    if ($score > 0) {
+        return gow_health_item('ok', 'ROM library path', '');
+    }
+    $nested = $roms . '/roms';
+    if (is_dir($nested) && gow_health_rom_platform_score($nested) > 0) {
+        return gow_health_item(
+            'warn',
+            'ROM library path',
+            "Platform folders are under {$nested} — set ROMs library to that path."
+        );
+    }
+    return gow_health_item(
+        'warn',
+        'ROM library path',
+        'No known platform subfolders (nes, snes, …) — pick the folder that contains them.'
+    );
 }
 
 function gow_health_audit_library_mounts(array $cfg, string $cfg_file) {
@@ -218,13 +268,23 @@ function gow_health_audit_library_mounts(array $cfg, string $cfg_file) {
     if (preg_match('#/etc/wolf/roms:/ROMs#', $text)) {
         $issues[] = 'found /etc/wolf/roms → /ROMs (use host share path)';
     }
-    if (strpos($text, 'title = "EmulationStation"') !== false
-        && strpos($text, $roms . ':/ROMs') === false) {
-        $issues[] = 'EmulationStation missing host ROM bind';
+    if (gow_health_esde_titles_present($text) && strpos($text, $roms . ':/ROMs') === false) {
+        $issues[] = 'ES-DE missing host ROM bind';
     }
     if (strpos($text, 'title = "RetroArch"') !== false
         && strpos($text, $roms . ':/ROMs') === false) {
         $issues[] = 'RetroArch missing host ROM bind';
+    }
+    if (strpos($text, 'title = "Pegasus"') !== false
+        && strpos($text, $roms . ':/ROMs') === false) {
+        $issues[] = 'Pegasus missing host ROM bind';
+    }
+    $prism = rtrim($cfg['PRISM_LIBRARY'] ?? '', '/');
+    if ($prism !== ''
+        && (strpos($text, 'title = "Prismlauncher"') !== false
+            || strpos($text, 'title = "Prism Launcher"') !== false)
+        && strpos($text, $prism . ':/games/prismlauncher') === false) {
+        $issues[] = 'Prismlauncher missing host data bind';
     }
 
     if (empty($issues)) {

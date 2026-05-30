@@ -4,8 +4,6 @@
 # See: https://games-on-whales.github.io/wolf/stable/dev/api.html
 # OpenAPI: curl --unix-socket "$sock" http://localhost/api/v1/openapi-schema
 
-set -euo pipefail
-
 _gow_wolf_api_err() { echo "ERROR: $*" >&2; }
 
 # Resolve the Wolf API Unix socket (host path under appdata).

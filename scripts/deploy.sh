@@ -31,6 +31,7 @@ ROMS_LIBRARY="${ROMS_LIBRARY:-}"
 BIOS_LIBRARY="${BIOS_LIBRARY:-}"
 MEDIA_LIBRARY="${MEDIA_LIBRARY:-}"
 LUTRIS_LIBRARY="${LUTRIS_LIBRARY:-}"
+PRISM_LIBRARY="${PRISM_LIBRARY:-}"
 COMPAT_TOOLS_PATH="${COMPAT_TOOLS_PATH:-}"
 WOLF_MEMORY_LIMIT="${WOLF_MEMORY_LIMIT:-}"
 WOLF_DEN_MEMORY_LIMIT="${WOLF_DEN_MEMORY_LIMIT:-}"
@@ -159,6 +160,13 @@ sync_library_links_logged() {
         info "  ${line/=/ → }"
     done < <(gow_sync_library_links "$APPDATA")
     gow_resolve_library_mounts "$APPDATA"
+    if [[ -n "${PRISM_LIBRARY:-}" ]]; then
+        mkdir -p "${PRISM_LIBRARY}"
+        chown 1000:1000 "${PRISM_LIBRARY}" 2>/dev/null || true
+    elif [[ -n "${GAMES_LIBRARY:-}" ]]; then
+        mkdir -p "${GAMES_LIBRARY}/prismlauncher"
+        chown 1000:1000 "${GAMES_LIBRARY}/prismlauncher" 2>/dev/null || true
+    fi
     if [[ -n "${COMPAT_TOOLS_PATH:-}" ]]; then
         chown -R 1000:1000 "$COMPAT_TOOLS_PATH" 2>/dev/null || true
         chmod 775 "$COMPAT_TOOLS_PATH" 2>/dev/null || true
@@ -224,6 +232,9 @@ write_library_mounts() {
     fi
     if [[ -n "$LUTRIS_LIBRARY" ]]; then
         printf '      - %s:/etc/wolf/lutris:rw\n' "$LUTRIS_LIBRARY"
+    fi
+    if [[ -n "$PRISM_LIBRARY" ]]; then
+        printf '      - %s:/etc/wolf/prismlauncher:rw\n' "$PRISM_LIBRARY"
     fi
     if [[ -n "$COMPAT_TOOLS_PATH" ]]; then
         printf '      - %s:/etc/wolf/compatibilitytools.d:rw\n' "$COMPAT_TOOLS_PATH"
@@ -589,7 +600,7 @@ fi
 info "Pulling Docker images (progress below)..."
 pull_attempt=1
 while (( pull_attempt <= 3 )); do
-    if docker compose -f "$COMPOSE_FILE" pull --progress plain; then
+    if docker compose -f "$COMPOSE_FILE" pull; then
         break
     fi
     if (( pull_attempt >= 3 )); then
@@ -614,6 +625,12 @@ done
 
 if [[ -f "${APPDATA}/cfg/config.toml" ]]; then
     if bash "$(dirname "$0")/apply-mount-presets.sh"; then
+        if [[ -n "${ROMS_LIBRARY:-}" ]] && [[ -x "$(dirname "$0")/repair-esde.sh" ]]; then
+            bash "$(dirname "$0")/repair-esde.sh" || warn "ES-DE repair reported errors (continuing)"
+            if [[ -x "$(dirname "$0")/repair-pegasus.sh" ]]; then
+                bash "$(dirname "$0")/repair-pegasus.sh" || warn "Pegasus repair reported errors (continuing)"
+            fi
+        fi
         info "Restarting Wolf so app runner mount presets take effect..."
         docker compose -f "$COMPOSE_FILE" restart wolf
     fi

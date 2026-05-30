@@ -16,7 +16,8 @@ info() { echo "==> $*"; }
 SCRIPT_NAMES=(
   vars.sh preinstall.sh install.sh deploy.sh uninstall.sh update.sh reset.sh
   wipe-full.sh library-links.sh wolf-api.sh apply-mount-presets.sh apply-mount-presets.py
-  pairing-state.sh repair-esde.sh detect-paths.sh health-check.sh fix-all.sh
+  run-python3.sh rom-platform-dirs.sh
+  pairing-state.sh repair-esde.sh repair-pegasus.sh repair-frontend-lib.sh detect-paths.sh health-check.sh fix-all.sh
   cleanup-wolf-sessions.sh apply-ui.sh hotfix-page.sh dev-sync.sh dev-test.sh
 )
 

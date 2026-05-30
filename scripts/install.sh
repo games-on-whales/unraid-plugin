@@ -50,6 +50,7 @@ backfill_cfg_defaults() {
         [BIOS_LIBRARY]="${DEFAULT_BIOS_LIBRARY}"
         [MEDIA_LIBRARY]="${DEFAULT_MEDIA_LIBRARY}"
         [LUTRIS_LIBRARY]="${DEFAULT_LUTRIS_LIBRARY}"
+        [PRISM_LIBRARY]="${DEFAULT_PRISM_LIBRARY}"
         [COMPAT_TOOLS_PATH]="${DEFAULT_COMPAT_TOOLS_PATH}"
         [WOLF_MEMORY_LIMIT]=""
         [WOLF_DEN_MEMORY_LIMIT]=""
@@ -105,9 +106,11 @@ write_initial_cfg() {
     if [[ -f "$GOW_CFG" ]]; then
         info "Existing config found at ${GOW_CFG} — preserving"
         backfill_cfg_defaults
+        GOW_FRESH_INSTALL=false
         return
     fi
 
+    GOW_FRESH_INSTALL=true
     cat > "$GOW_CFG" <<EOF
 APPDATA=${DEFAULT_APPDATA}
 RENDER_NODE=
@@ -124,6 +127,7 @@ ROMS_LIBRARY=${DEFAULT_ROMS_LIBRARY}
 BIOS_LIBRARY=${DEFAULT_BIOS_LIBRARY}
 MEDIA_LIBRARY=${DEFAULT_MEDIA_LIBRARY}
 LUTRIS_LIBRARY=${DEFAULT_LUTRIS_LIBRARY}
+PRISM_LIBRARY=${DEFAULT_PRISM_LIBRARY}
 COMPAT_TOOLS_PATH=${DEFAULT_COMPAT_TOOLS_PATH}
 WOLF_MEMORY_LIMIT=
 WOLF_DEN_MEMORY_LIMIT=
@@ -159,8 +163,13 @@ install_settings_ui() {
     /sbin/installpkg "$pkg"
 }
 
+GOW_FRESH_INSTALL=false
 write_initial_cfg
-install_settings_ui
+if [[ "$GOW_FRESH_INSTALL" == true ]]; then
+    install_settings_ui
+else
+    info "Preserving installed settings UI (use Plugins → update or apply-ui.sh to refresh)"
+fi
 
 info "Phase 1 complete — open Settings > Games on Whales to finish setup"
 exit 0

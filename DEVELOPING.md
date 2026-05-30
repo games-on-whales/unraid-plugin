@@ -74,6 +74,8 @@ plugin install http://<your-dev-machine-ip>:8888/gow.plg
 | `library-links.sh` | Deploy/update/mount presets | Symlink user library paths under `${APPDATA}/` when they live outside GoW appdata |
 | `wolf-api.sh` | Other scripts | `curl` helpers for Wolf's Unix-socket REST API (`/api/v1/*`) |
 | `apply-mount-presets.sh` / `.py` | Deploy/update/fix | Apply library mounts via Wolf API when `${APPDATA}/run/wolf.sock` is up, else patch `config.toml` |
+| `run-python3.sh` | Sourced by mount/repair scripts | Host `python3` or Docker `python:3-alpine` fallback (Unraid has no Python) |
+| `rom-platform-dirs.sh` | detect-paths / health | Bash platform folder names for ROM root scoring |
 | `detect-paths.sh` | `install.sh` (first cfg) | Suggest existing ROM/BIOS/Steam/etc. share paths when folders exist |
 | `repair-esde.sh` | UI Advanced | Restore ES-DE Custom Scripts config and re-apply ROM/BIOS mounts |
 | `cleanup-wolf-sessions.sh` | UI / stop / Fix mounts | Remove exited `Wolf*` session containers that hold memory |
@@ -95,6 +97,7 @@ BIOS_LIBRARY=/mnt/user/games/bioses
 STEAM_LIBRARY=/mnt/user/games/steam
 GAMES_LIBRARY=/mnt/user/games
 LUTRIS_LIBRARY=/mnt/user/games/lutris
+PRISM_LIBRARY=/mnt/user/games/prismlauncher
 WOLF_IMAGE=ghcr.io/games-on-whales/wolf:stable
 WOLF_DEN_IMAGE=ghcr.io/games-on-whales/wolf-den:stable
 WOLF_ENCODER_NODE=

@@ -73,6 +73,7 @@ function default_cfg() {
         'BIOS_LIBRARY'      => '/mnt/user/games/bioses',
         'MEDIA_LIBRARY'     => '/mnt/user/games/media',
         'LUTRIS_LIBRARY'    => '/mnt/user/games/lutris',
+        'PRISM_LIBRARY'     => '/mnt/user/games/prismlauncher',
         'COMPAT_TOOLS_PATH' => '/mnt/user/appdata/gow/compatibilitytools.d',
         'WOLF_MEMORY_LIMIT'     => '',
         'WOLF_DEN_MEMORY_LIMIT' => '',
@@ -106,7 +107,7 @@ function save_cfg($cfg) {
         'APPDATA', 'RENDER_NODE', 'GPU_VENDOR', 'GPU_NAME', 'GPU_DRIVER',
         'WOLF_DEN_PORT', 'WOLF_NETWORK_MODE', 'WOLF_NETWORK_NAME', 'WOLF_NETWORK_IPV4',
         'ROMS_LIBRARY', 'BIOS_LIBRARY', 'STEAM_LIBRARY', 'GAMES_LIBRARY',
-        'MEDIA_LIBRARY', 'LUTRIS_LIBRARY', 'COMPAT_TOOLS_PATH',
+        'MEDIA_LIBRARY', 'LUTRIS_LIBRARY', 'PRISM_LIBRARY', 'COMPAT_TOOLS_PATH',
         'WOLF_IMAGE', 'WOLF_DEN_IMAGE', 'WOLF_ENCODER_NODE',
         'WOLF_MEMORY_LIMIT', 'WOLF_DEN_MEMORY_LIMIT',
         'DEPLOYED',
@@ -150,6 +151,7 @@ function gow_apply_standard_library_paths($games_root, array &$cfg) {
     $cfg['BIOS_LIBRARY'] = $games_root . '/bioses';
     $cfg['STEAM_LIBRARY'] = $games_root . '/steam';
     $cfg['LUTRIS_LIBRARY'] = $games_root . '/lutris';
+    $cfg['PRISM_LIBRARY'] = $games_root . '/prismlauncher';
     $cfg['MEDIA_LIBRARY'] = $games_root . '/media';
     if ($appdata !== '') {
         $cfg['COMPAT_TOOLS_PATH'] = $appdata . '/compatibilitytools.d';
@@ -164,6 +166,7 @@ function gow_read_library_paths_from_post(array &$cfg) {
     $cfg['BIOS_LIBRARY']      = normalize_optional_path($_POST['bios_library'] ?? '');
     $cfg['MEDIA_LIBRARY']     = normalize_optional_path($_POST['media_library'] ?? '');
     $cfg['LUTRIS_LIBRARY']    = normalize_optional_path($_POST['lutris_library'] ?? '');
+    $cfg['PRISM_LIBRARY']     = normalize_optional_path($_POST['prism_library'] ?? '');
     $cfg['COMPAT_TOOLS_PATH'] = normalize_optional_path($_POST['compat_tools_path'] ?? '');
 }
 
@@ -178,6 +181,7 @@ function gow_validate_setup_paths(array $cfg) {
         'BIOS_LIBRARY' => 'BIOS files path',
         'MEDIA_LIBRARY' => 'Media library',
         'LUTRIS_LIBRARY' => 'Lutris data path',
+        'PRISM_LIBRARY' => 'Prism Launcher data path',
         'COMPAT_TOOLS_PATH' => 'Compatibility tools path',
     ] as $key => $label) {
         if (!valid_host_path($cfg[$key] ?? '')) {
@@ -274,6 +278,10 @@ function smart_path_map() {
             '/mnt/user/games/lutris', '/mnt/user/appdata/gow/lutris', '/mnt/user/appdata/lutris',
             '/mnt/cache/appdata/gow/lutris',
         ],
+        'PRISM_LIBRARY' => [
+            '/mnt/user/games/prismlauncher', '/mnt/user/appdata/gow/prismlauncher',
+            '/mnt/cache/games/prismlauncher', '/mnt/cache/appdata/gow/prismlauncher',
+        ],
         'COMPAT_TOOLS_PATH' => [
             '/mnt/user/appdata/gow/compatibilitytools.d', '/mnt/cache/appdata/gow/compatibilitytools.d',
         ],
@@ -343,13 +351,13 @@ function gow_path_field($id, $name, $label, $value, $pick_root, $help = '') {
         </select>
         <?php endif; ?>
         <input type="text" name="<?= htmlspecialchars($name) ?>" id="<?= htmlspecialchars($id) ?>"
-               class="gow-input gow-path-picker filepicker"
+               class="gow-input gow-path-picker"
                value="<?= htmlspecialchars($value) ?>"
-               placeholder="Click to browse folders…"
+               placeholder="Click Browse or type a path…"
                <?= gow_path_picker_attrs($pick_root) ?>>
         <button type="button" class="gow-btn gow-btn-secondary gow-browse-btn"
-                title="Browse Unraid shares" aria-label="Browse Unraid shares for <?= htmlspecialchars($label) ?>"
-                data-target="<?= htmlspecialchars($id) ?>">📁</button>
+                title="Browse folders" aria-label="Browse folders for <?= htmlspecialchars($label) ?>"
+                data-target="<?= htmlspecialchars($id) ?>">Browse</button>
       </div>
       <?php if ($help !== ''): ?><p class="gow-help"><?= htmlspecialchars($help) ?></p><?php endif; ?>
       <?= $status_html ?>
@@ -397,6 +405,7 @@ function gow_library_slot_map() {
         'Steam' => ['key' => 'STEAM_LIBRARY', 'slot' => 'steam'],
         'Games' => ['key' => 'GAMES_LIBRARY', 'slot' => 'games'],
         'Lutris' => ['key' => 'LUTRIS_LIBRARY', 'slot' => 'lutris'],
+        'Prism Launcher' => ['key' => 'PRISM_LIBRARY', 'slot' => 'prismlauncher'],
         'Media' => ['key' => 'MEDIA_LIBRARY', 'slot' => 'media'],
         'Compat tools' => ['key' => 'COMPAT_TOOLS_PATH', 'slot' => 'compatibilitytools.d'],
     ];
@@ -890,10 +899,28 @@ $saved_notice      = isset($_GET['saved']);
                              background: var(--background-color); color: var(--text-color);
                              font-size: 0.95em; box-sizing: border-box; }
   .gow-path-picker { cursor: pointer; }
-  .gow-path-row { display: flex; gap: 8px; align-items: stretch; width: 100%; position: relative; flex-wrap: wrap; }
-  .gow-path-row .gow-input { flex: 1; min-width: 12rem; }
-  .gow-share-select { flex: 0 0 auto; width: 7.5rem; max-width: 38%; min-width: 5.5rem; }
-  .gow-browse-btn { flex: 0 0 auto; padding: 7px 12px; line-height: 1; }
+  .gow-path-row {
+    display: flex; gap: 6px; align-items: center; width: 100%;
+    position: relative; flex-wrap: nowrap;
+  }
+  .gow-path-row .gow-path-picker { flex: 1 1 12rem; min-width: 0; width: auto; }
+  .gow-path-row .gow-share-select {
+    flex: 0 0 auto; width: auto; min-width: 5.75rem; max-width: 9rem;
+    height: 2.25rem; padding: 0 1.75rem 0 0.65rem;
+    border: 1px solid var(--border-color); border-radius: 5px;
+    background-color: var(--gray-500); color: var(--white);
+    font-size: 0.9em; font-weight: 600; cursor: pointer;
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23ffffff' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 0.5rem center;
+    box-sizing: border-box;
+  }
+  .gow-path-row .gow-browse-btn {
+    flex: 0 0 auto; height: 2.25rem; padding: 0 0.75rem;
+    line-height: 1; white-space: nowrap;
+    border: 1px solid var(--border-color); box-sizing: border-box;
+    background: var(--gray-500) !important; background-image: none !important;
+  }
   .gow-details, .gow-details-body, .gow-field { overflow: visible; }
   .gow-path-row .fileTree,
   .gow-path-row .fileTree.textarea {
@@ -1312,7 +1339,7 @@ $saved_notice      = isset($_GET['saved']);
     <p class="gow-step-title">2. Game libraries</p>
 
     <details class="gow-details" id="gow-library-details"<?= $library_open ? ' open' : '' ?>>
-      <summary>ROMs, Steam, Lutris, and other folders<span class="gow-details-hint"><?= htmlspecialchars($games_share_root) ?></span></summary>
+      <summary>ROMs, Steam, Lutris, Prism, and other folders<span class="gow-details-hint"><?= htmlspecialchars($games_share_root) ?></span></summary>
       <div class="gow-details-body">
         <p class="gow-section-note">
           These host folders are mounted into game containers (ES-DE, RetroArch, Steam, etc.).
@@ -1328,7 +1355,7 @@ $saved_notice      = isset($_GET['saved']);
           </button>
         </div>
         <p class="gow-help" style="margin-top:0">
-          Sets <code>roms</code>, <code>bioses</code>, <code>steam</code>, <code>lutris</code>, and <code>media</code> as subfolders of the games share.
+          Sets <code>roms</code>, <code>bioses</code>, <code>steam</code>, <code>lutris</code>, <code>media</code>, and <code>prismlauncher</code> as subfolders of the games share.
           Compatibility tools stay under appdata. This overwrites the library path fields above — use it once when adopting the standard layout.
         </p>
 
@@ -1341,6 +1368,8 @@ $saved_notice      = isset($_GET['saved']);
               'Steam library / userdata.');
           gow_path_field('lutris_library', 'lutris_library', 'Lutris', $cfg['LUTRIS_LIBRARY'], $pick_root,
               'Lutris games and config.');
+          gow_path_field('prism_library', 'prism_library', 'Prism Launcher', $cfg['PRISM_LIBRARY'], $pick_root,
+              'Minecraft instances and modpacks (mounted at /games/prismlauncher in the session).');
           gow_path_field('media_library', 'media_library', 'Media', $cfg['MEDIA_LIBRARY'], $pick_root,
               'Disc images and videos for Kodi / ES-DE.');
           gow_path_field('compat_tools_path', 'compat_tools_path', 'Compatibility tools', $cfg['COMPAT_TOOLS_PATH'], $pick_root,

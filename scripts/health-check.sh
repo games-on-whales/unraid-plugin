@@ -19,26 +19,29 @@ fi
 
 json=$(php "$HEALTH_PHP" 2>/dev/null) || err "Health check failed to run"
 
-summary=$(echo "$json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('summary','unknown'))")
-echo "Games on Whales health: ${summary^^}"
+summary=$(php -r '
+$d = json_decode(stream_get_contents(STDIN), true);
+echo $d["summary"] ?? "unknown";
+' <<<"$json")
+summary_upper=$(echo "$summary" | tr '[:lower:]' '[:upper:]')
+echo "Games on Whales health: ${summary_upper}"
 echo
 
-echo "$json" | python3 - <<'PY'
-import json
-import sys
-
-data = json.load(sys.stdin)
-icons = {"ok": "OK", "warn": "WARN", "fail": "FAIL"}
-for item in data.get("checks", []):
-    level = item.get("level", "warn")
-    label = item.get("label", "")
-    hint = item.get("hint", "")
-    mark = icons.get(level, "?")
-    line = f"[{mark}] {label}"
-    if hint:
-        line += f" — {hint}"
-    print(line)
-PY
+php -r '
+$d = json_decode(stream_get_contents(STDIN), true);
+$icons = ["ok" => "OK", "warn" => "WARN", "fail" => "FAIL"];
+foreach ($d["checks"] ?? [] as $item) {
+    $level = $item["level"] ?? "warn";
+    $label = $item["label"] ?? "";
+    $hint = $item["hint"] ?? "";
+    $mark = $icons[$level] ?? "?";
+    $line = "[$mark] $label";
+    if ($hint !== "") {
+        $line .= " — $hint";
+    }
+    echo $line, PHP_EOL;
+}
+' <<<"$json"
 
 case "$summary" in
     healthy) exit 0 ;;

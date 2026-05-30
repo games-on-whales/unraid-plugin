@@ -41,6 +41,52 @@ inside the Modprobe.d Config File editor.
 - Short summary: "for Wayland support, you need to set `nvidia_drm` modeset
   in Tools > System Drivers for your driver, then restart."
 
+## Wolf UI black screen after pairing (Moonlight)
+
+If Moonlight pairs successfully but **Wolf UI** shows a black frame for ~15–30
+seconds and then disconnects, check Wolf logs for `Wolf-UI_*` starting and
+stopping quickly. A common cause on Unraid is the Wolf UI session container
+not receiving the Wolf API Unix socket: the plugin stores the socket at
+`${APPDATA}/run/wolf.sock`, but the default Wolf config bind-mounts
+`/var/run/wolf/wolf.sock` as a **host** path (which does not exist on Unraid).
+Wolf UI then fails to connect to the API and exits.
+
+If the socket mount is already correct but the stream still drops after a few
+seconds, check `dmesg` on the host for `wolf-ui` and `libwayland-cursor`
+(general protection fault). That is a known Godot/Wayland issue on some NVIDIA
+systems. Plugin **2026.05.31f+** adds `RUN_GAMESCOPE=1` to the Wolf UI runner
+via **Fix mounts**; re-run that and restart Wolf, then relaunch Wolf UI.
+
+### Check
+
+```bash
+grep -A12 'title = "Wolf UI"' /mnt/user/appdata/gow/cfg/config.toml
+```
+
+The Wolf UI runner `mounts` entry should use your appdata socket on the **left**
+side of the colon, for example:
+
+```text
+/mnt/user/appdata/gow/run/wolf.sock:/var/run/wolf/wolf.sock
+```
+
+Not:
+
+```text
+/var/run/wolf/wolf.sock:/var/run/wolf/wolf.sock
+```
+
+### Fix
+
+Re-run **Install** or **Fix mounts** from the plugin (recent plugin versions
+patch this automatically), or edit `config.toml` manually and restart Wolf:
+
+```bash
+sed -i "s|'/var/run/wolf/wolf.sock:/var/run/wolf/wolf.sock'|'/mnt/user/appdata/gow/run/wolf.sock:/var/run/wolf/wolf.sock'|" \
+  /mnt/user/appdata/gow/cfg/config.toml
+docker restart wolf
+```
+
 ## Moonlight discovery and mDNS/Avahi warnings
 
 Wolf advertises the Moonlight service with mDNS on UDP port 5353. Unraid also
@@ -121,6 +167,20 @@ docker compose -f "$APPDATA/docker-compose.yml" restart wolf wolf-den
 
 ## ES-DE Custom Scripts and ROM/BIOS library mounts
 
+EmulationStation (ES-DE) in Games on Whales uses two different things that are easy to confuse:
+
+| What you see | What it is |
+|--------------|------------|
+| **Custom Scripts** (≈9 entries) | Emulator launcher shortcuts (RetroArch, Dolphin, RPCS3, …) — **always kept** |
+| **NES / SNES / PS2 / …** platforms | Your actual ROM library under `/ROMs/<platform>` — **added alongside** Custom Scripts |
+
+Custom Scripts and ROM platforms are **both** present: repair/regeneration only **adds**
+ROM systems; it never removes the Custom Scripts platform or your launcher `.sh` entries.
+
+Custom Scripts alone does **not** scan your ROM share. ROM platforms are generated from
+subfolders of your ROM library (same layout as Pegasus: `/ROMs/nes`, `/ROMs/snes`, …)
+and use `rom_launcher.sh` to start games.
+
 EmulationStation (ES-DE) in Games on Whales expects shared libraries at fixed paths
 inside the app container:
 
@@ -131,8 +191,10 @@ inside the app container:
 | Disc / media images | `/media` | ISO mounting in launchers |
 
 The Unraid plugin writes these into each app runner's `mounts` using your Unraid
-share paths (for example `/mnt/user/games/roms:/ROMs:rw`). When Wolf is running,
-**Fix mounts** uses the [Wolf REST API](https://games-on-whales.github.io/wolf/stable/dev/api.html)
+share paths (for example `/mnt/user/games/roms:/ROMs:rw`). **Unraid does not
+ship Python on the host** — the plugin runs mount-preset and repair helpers via
+`python:3-alpine` in Docker when needed (no NerdPack install required). When Wolf
+is running, **Fix mounts** uses the [Wolf REST API](https://games-on-whales.github.io/wolf/stable/dev/api.html)
 (`GET` / `POST /api/v1/apps`) over the Unix socket at `${APPDATA}/run/wolf.sock`;
 otherwise it patches `config.toml` on disk. Mounting folders
 only into the Wolf container at `/etc/wolf/roms` does **not** expose them to
@@ -144,8 +206,14 @@ ES-DE seeds its **Custom Scripts** platform (the launcher entries for Dolphin,
 RetroArch, RPCS3, etc.) only on first run. Wolf keeps that state under:
 
 ```text
-/mnt/user/appdata/gow/<client-id>/EmulationStation/ES-DE/
+/mnt/user/appdata/gow/profile-data/user/WolfES-DE/ES-DE/
 ```
+
+(Older Wolf builds may use `/mnt/user/appdata/gow/<client-id>/EmulationStation/ES-DE/`.)
+
+**ROM library path:** point **ROMs library** at the folder that **contains platform
+subfolders** (`nes`, `snes`, `gba`, …). If your share is `/mnt/user/roms/roms/nes`, set
+ROMs library to `/mnt/user/roms/roms`, not `/mnt/user/roms/Roms` (a single-console folder).
 
 If an earlier setup wrote bad paths, or `es_settings.xml` already existed with the
 wrong ROM folder, the stock launcher config may never appear again.
@@ -305,6 +373,23 @@ Restart Wolf after editing (`docker compose -f /mnt/user/appdata/gow/docker-comp
 `JAVA_MAX_MEM` caps the JVM heap; `mem_limit` is the hard container ceiling.
 Keep `mem_limit` a couple of GiB above `JAVA_MAX_MEM` to leave room for the JVM
 and native memory.
+
+### Where Prism Launcher stores instances
+
+When the plugin mounts your games share at `/games`, the Prism Launcher image
+stores its data under **`/games/prismlauncher`** inside the session container.
+On Unraid that is typically:
+
+```text
+/mnt/user/games/prismlauncher/
+```
+
+(Or whatever you set as **Prism Launcher** library in plugin settings — default
+`/mnt/user/games/prismlauncher` under the games share.) On first launch
+after this change, existing data under appdata
+(`…/appdata/gow/…/Prism Launcher/.local/share/PrismLauncher/`) is copied
+automatically if the new folder is empty. Rebuild or pull a current
+`prismlauncher` image for the behavior.
 
 ## Managing Wolf apps
 

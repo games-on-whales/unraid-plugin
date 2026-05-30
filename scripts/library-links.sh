@@ -56,6 +56,7 @@ gow_ensure_library_link() {
 
     # User data lives elsewhere — expose it under appdata for Wolf.
     mkdir -p "$(dirname "$canonical")"
+    mkdir -p "$user_norm" 2>/dev/null || true
 
     if [[ -e "$canonical" && ! -L "$canonical" ]]; then
         if [[ -n "$(ls -A "$canonical" 2>/dev/null)" ]]; then
@@ -73,10 +74,39 @@ gow_ensure_library_link() {
     return 0
 }
 
+# Host path for Docker bind mounts (resolves appdata symlinks; ensures target exists).
+gow_mount_source_path() {
+    local p="${1:-}"
+    [[ -n "$p" ]] || { echo ""; return 0; }
+
+    p="${p%/}"
+    if [[ -L "$p" ]]; then
+        local resolved
+        resolved="$(readlink -f "$p" 2>/dev/null || true)"
+        if [[ -n "$resolved" ]]; then
+            mkdir -p "$resolved" 2>/dev/null || true
+            echo "$resolved"
+            return 0
+        fi
+    fi
+
+    if [[ ! -e "$p" ]]; then
+        mkdir -p "$p" 2>/dev/null || true
+    fi
+
+    local resolved
+    resolved="$(readlink -f "$p" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]]; then
+        echo "$resolved"
+        return 0
+    fi
+    gow_norm_path "$p"
+}
+
 # Sync all library slots from a sourced gow.cfg. Emits lines: SLOT=canonical_path
 gow_sync_library_links() {
     local appdata="${1%/}"
-    local steam games roms bios media lutris compat
+    local steam games roms bios media lutris prism compat
 
     steam="$(gow_ensure_library_link "$appdata" steam "${STEAM_LIBRARY:-}" || true)"
     games="$(gow_ensure_library_link "$appdata" games "${GAMES_LIBRARY:-}" || true)"
@@ -84,6 +114,7 @@ gow_sync_library_links() {
     bios="$(gow_ensure_library_link "$appdata" bioses "${BIOS_LIBRARY:-}" || true)"
     media="$(gow_ensure_library_link "$appdata" media "${MEDIA_LIBRARY:-}" || true)"
     lutris="$(gow_ensure_library_link "$appdata" lutris "${LUTRIS_LIBRARY:-}" || true)"
+    prism="$(gow_ensure_library_link "$appdata" prismlauncher "${PRISM_LIBRARY:-}" || true)"
     compat="$(gow_ensure_library_link "$appdata" compatibilitytools.d "${COMPAT_TOOLS_PATH:-}" || true)"
 
     [[ -n "$steam" ]] && echo "STEAM_LIBRARY=${steam}"
@@ -92,21 +123,20 @@ gow_sync_library_links() {
     [[ -n "$bios" ]] && echo "BIOS_LIBRARY=${bios}"
     [[ -n "$media" ]] && echo "MEDIA_LIBRARY=${media}"
     [[ -n "$lutris" ]] && echo "LUTRIS_LIBRARY=${lutris}"
+    [[ -n "$prism" ]] && echo "PRISM_LIBRARY=${prism}"
     [[ -n "$compat" ]] && echo "COMPAT_TOOLS_PATH=${compat}"
 }
 
 # Resolve paths for mount presets / compose (same order as apply-mount-presets.py args).
 gow_resolve_library_mounts() {
     local appdata="${1%/}"
-    ROMS_LIBRARY=""
-    BIOS_LIBRARY=""
-    MEDIA_LIBRARY=""
-    STEAM_LIBRARY=""
-    GAMES_LIBRARY=""
-    LUTRIS_LIBRARY=""
-    COMPAT_TOOLS_PATH=""
+    local line key value
 
-    while IFS='=' read -r key value; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line//$'\r'/}"
+        [[ "$line" == *"="* ]] || continue
+        key="${line%%=*}"
+        value="${line#*=}"
         case "$key" in
             ROMS_LIBRARY) ROMS_LIBRARY="$value" ;;
             BIOS_LIBRARY) BIOS_LIBRARY="$value" ;;
@@ -114,6 +144,7 @@ gow_resolve_library_mounts() {
             STEAM_LIBRARY) STEAM_LIBRARY="$value" ;;
             GAMES_LIBRARY) GAMES_LIBRARY="$value" ;;
             LUTRIS_LIBRARY) LUTRIS_LIBRARY="$value" ;;
+            PRISM_LIBRARY) PRISM_LIBRARY="$value" ;;
             COMPAT_TOOLS_PATH) COMPAT_TOOLS_PATH="$value" ;;
         esac
     done < <(gow_sync_library_links "$appdata")

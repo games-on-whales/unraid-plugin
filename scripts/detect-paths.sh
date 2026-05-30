@@ -6,6 +6,9 @@
 
 set -euo pipefail
 
+# shellcheck source=rom-platform-dirs.sh
+source "$(dirname "$0")/rom-platform-dirs.sh"
+
 first_dir() {
     local dir
     for dir in "$@"; do
@@ -24,21 +27,40 @@ emit_if_dir() {
     [[ -n "$found" ]] && echo "${key}=${found}"
 }
 
+emit_roms_library() {
+    local best
+    best=$(gow_best_rom_root \
+        /mnt/user/games/roms \
+        /mnt/user/roms \
+        /mnt/user/ROMs \
+        /mnt/user/retrogaming/roms \
+        /mnt/cache/games/roms \
+        /mnt/cache/roms \
+        /mnt/cache/ROMs \
+        || true)
+    if [[ -n "$best" ]]; then
+        echo "ROMS_LIBRARY=${best}"
+        return
+    fi
+    emit_if_dir ROMS_LIBRARY \
+        /mnt/user/games/roms \
+        /mnt/user/roms \
+        /mnt/user/ROMs \
+        /mnt/user/retrogaming/roms \
+        /mnt/cache/games/roms \
+        /mnt/cache/roms \
+        /mnt/cache/ROMs
+}
+
 emit_if_dir APPDATA \
     /mnt/user/appdata/gow \
     /mnt/cache/appdata/gow
 
-emit_if_dir ROMS_LIBRARY \
-    /mnt/user/games/roms \
-    /mnt/user/roms \
-    /mnt/user/ROMs \
-    /mnt/user/retrogaming/roms \
-    /mnt/cache/games/roms \
-    /mnt/cache/roms \
-    /mnt/cache/ROMs
+emit_roms_library
 
 emit_if_dir BIOS_LIBRARY \
     /mnt/user/games/bioses \
+    /mnt/user/roms/bioses \
     /mnt/user/bioses \
     /mnt/user/bios \
     /mnt/user/retrogaming/bios \
@@ -66,6 +88,12 @@ emit_if_dir LUTRIS_LIBRARY \
     /mnt/user/appdata/gow/lutris \
     /mnt/user/appdata/lutris \
     /mnt/cache/appdata/gow/lutris
+
+emit_if_dir PRISM_LIBRARY \
+    /mnt/user/games/prismlauncher \
+    /mnt/user/appdata/gow/prismlauncher \
+    /mnt/cache/games/prismlauncher \
+    /mnt/cache/appdata/gow/prismlauncher
 
 emit_if_dir COMPAT_TOOLS_PATH \
     /mnt/user/appdata/gow/compatibilitytools.d \

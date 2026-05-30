@@ -8,6 +8,8 @@
 set -euo pipefail
 
 source "$(dirname "$0")/vars.sh"
+# shellcheck source=run-python3.sh
+source "$(dirname "$0")/run-python3.sh"
 source "$(dirname "$0")/library-links.sh"
 # shellcheck source=wolf-api.sh
 source "$(dirname "$0")/wolf-api.sh"
@@ -28,10 +30,15 @@ WOLF_SOCKET="${APPDATA}/run/wolf.sock"
 info "Syncing library symlinks under ${APPDATA}"
 gow_resolve_library_mounts "$APPDATA"
 
-if [[ -z "$ROMS_LIBRARY$BIOS_LIBRARY$MEDIA_LIBRARY$STEAM_LIBRARY$GAMES_LIBRARY$LUTRIS_LIBRARY$COMPAT_TOOLS_PATH" ]]; then
-    info "No shared library paths configured; skipping mount presets"
-    exit 0
-fi
+# Docker bind mounts need real host directories, not appdata symlinks.
+ROMS_LIBRARY="$(gow_mount_source_path "${ROMS_LIBRARY:-}")"
+BIOS_LIBRARY="$(gow_mount_source_path "${BIOS_LIBRARY:-}")"
+MEDIA_LIBRARY="$(gow_mount_source_path "${MEDIA_LIBRARY:-}")"
+STEAM_LIBRARY="$(gow_mount_source_path "${STEAM_LIBRARY:-}")"
+GAMES_LIBRARY="$(gow_mount_source_path "${GAMES_LIBRARY:-}")"
+LUTRIS_LIBRARY="$(gow_mount_source_path "${LUTRIS_LIBRARY:-}")"
+PRISM_LIBRARY="$(gow_mount_source_path "${PRISM_LIBRARY:-}")"
+COMPAT_TOOLS_PATH="$(gow_mount_source_path "${COMPAT_TOOLS_PATH:-}")"
 
 LIB_ARGS=(
     "$ROMS_LIBRARY"
@@ -40,15 +47,20 @@ LIB_ARGS=(
     "$STEAM_LIBRARY"
     "$GAMES_LIBRARY"
     "$LUTRIS_LIBRARY"
+    "$PRISM_LIBRARY"
     "$COMPAT_TOOLS_PATH"
 )
+
+if [[ -z "$ROMS_LIBRARY$BIOS_LIBRARY$MEDIA_LIBRARY$STEAM_LIBRARY$GAMES_LIBRARY$LUTRIS_LIBRARY$PRISM_LIBRARY$COMPAT_TOOLS_PATH" ]]; then
+    info "No shared library paths configured; skipping library mount presets"
+fi
 
 if [[ ! -f "$CFG_FILE" ]] && ! gow_wolf_api_ready "$APPDATA"; then
     info "Wolf config and API socket not ready; mount presets will apply after Wolf starts"
     exit 0
 fi
 
-PRESET_ARGS=()
+PRESET_ARGS=(--wolf-socket-host "$WOLF_SOCKET")
 if gow_wolf_api_ready "$APPDATA"; then
     info "Moonlight-profile apps: also using Wolf API (${WOLF_SOCKET})"
     PRESET_ARGS+=(--socket "$WOLF_SOCKET")
@@ -57,7 +69,7 @@ if [[ -f "$CFG_FILE" ]]; then
     PRESET_ARGS+=("$CFG_FILE")
 fi
 
-info "Applying library mount presets (config.toml + optional API)"
-python3 "$PRESET_SCRIPT" "${PRESET_ARGS[@]}" "${LIB_ARGS[@]}"
+info "Applying Wolf app runner presets (Wolf UI socket + optional library mounts)"
+gow_python3 "$PRESET_SCRIPT" "${PRESET_ARGS[@]}" "${LIB_ARGS[@]}"
 
 exit 0

@@ -41,8 +41,8 @@ _NORMALIZED_ALIASES: dict[str, str] = {
 
 # title -> list of (config key, container destination)
 APP_PRESETS: dict[str, list[tuple[str, str]]] = {
-    "RetroArch": [("ROMS", "/ROMs"), ("BIOS", "/bioses")],
-    "Pegasus": [("ROMS", "/ROMs"), ("BIOS", "/bioses")],
+    "RetroArch": [("ROMS", "/ROMs"), ("BIOS", "/bioses"), ("MEDIA", "/media")],
+    "Pegasus": [("ROMS", "/ROMs"), ("BIOS", "/bioses"), ("MEDIA", "/media")],
     "EmulationStation": [("ROMS", "/ROMs"), ("BIOS", "/bioses"), ("MEDIA", "/media")],
     "Steam": [
         ("STEAM", "/home/retro/.local/share/Steam"),
@@ -58,7 +58,7 @@ APP_PRESETS: dict[str, list[tuple[str, str]]] = {
             "/home/retro/.steam/debian-installation/compatibilitytools.d",
         ),
     ],
-    "Prismlauncher": [("GAMES", "/games")],
+    "Prismlauncher": [("GAMES", "/games"), ("PRISM", "/games/prismlauncher")],
     "Kodi": [("MEDIA", "/media")],
     "Desktop (xfce)": [("GAMES", "/games")],
     "Heroic Games Launcher": [
@@ -72,7 +72,10 @@ APP_PRESETS: dict[str, list[tuple[str, str]]] = {
 
 HOME_MOUNT_ALIASES: dict[str, list[tuple[str, str]]] = {
     "RetroArch": [("BIOS", "/home/retro/bioses")],
-    "Pegasus": [("BIOS", "/home/retro/bioses")],
+    "Pegasus": [
+        ("BIOS", "/home/retro/bioses"),
+        ("ROMS", "/home/retro/ROMs"),
+    ],
     "EmulationStation": [
         ("BIOS", "/home/retro/bioses"),
         ("ROMS", "/home/retro/ROMs"),
@@ -111,7 +114,33 @@ def parse_mounts_array(text: str) -> list[tuple[str, str, str]]:
         parsed = parse_mount_line(raw)
         if parsed:
             mounts.append(parsed)
+    for raw in re.findall(r"'([^']+)'", text):
+        parsed = parse_mount_line(raw)
+        if parsed:
+            mounts.append(parsed)
     return mounts
+
+
+def parse_string_array(text: str) -> list[str]:
+    """Extract TOML string array entries (single- or double-quoted)."""
+    entries: list[str] = []
+    seen: set[str] = set()
+    for raw in re.findall(r'"([^"]+)"', text):
+        if raw not in seen:
+            seen.add(raw)
+            entries.append(raw)
+    for raw in re.findall(r"'([^']+)'", text):
+        if raw not in seen:
+            seen.add(raw)
+            entries.append(raw)
+    return entries
+
+
+def format_env_array(entries: list[str]) -> str:
+    if not entries:
+        return "[]"
+    inner = ", ".join(f'"{entry}"' for entry in entries)
+    return f"[{inner}]"
 
 
 def format_mounts_array(mounts: list[tuple[str, str, str]]) -> str:
@@ -213,7 +242,7 @@ def preset_key(title: str) -> str | None:
 
 
 def load_paths(argv: list[str]) -> dict[str, str]:
-    keys = ["ROMS", "BIOS", "MEDIA", "STEAM", "GAMES", "LUTRIS", "COMPAT"]
+    keys = ["ROMS", "BIOS", "MEDIA", "STEAM", "GAMES", "LUTRIS", "PRISM", "COMPAT"]
     out: dict[str, str] = {}
     for key, value in zip(keys, argv):
         value = value.strip()
@@ -238,6 +267,187 @@ def desired_for_title(title: str, paths: dict[str, str]) -> list[tuple[str, str,
 
 def mount_strings(mounts: list[tuple[str, str, str]]) -> list[str]:
     return [f"{src}:{dst}:{mode}" for src, dst, mode in mounts]
+
+
+WOLF_UI_TITLE = "Wolf UI"
+WOLF_SOCKET_CONTAINER = "/var/run/wolf/wolf.sock"
+# Godot Wayland can GPF in libwayland-cursor on some NVIDIA hosts; gamescope avoids direct WL cursor load.
+WOLF_UI_EXTRA_ENV = ("RUN_GAMESCOPE=1",)
+WOLF_UI_DEFAULT_ENV = (
+    "GOW_REQUIRED_DEVICES=/dev/input/event* /dev/dri/* /dev/nvidia*",
+    "WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock",
+    "WOLF_UI_AUTOUPDATE=False",
+    "LOGLEVEL=INFO",
+)
+
+
+def is_wolf_api_socket_mount(src: str, dst: str) -> bool:
+    return dst.rstrip("/") == WOLF_SOCKET_CONTAINER or dst.endswith("wolf.sock")
+
+
+def fix_wolf_ui_socket_mounts(
+    mounts: list[tuple[str, str, str]],
+    host_socket_path: str,
+) -> tuple[list[tuple[str, str, str]], bool]:
+    """Replace container-relative wolf.sock bind sources with the host socket path."""
+    desired = (host_socket_path, WOLF_SOCKET_CONTAINER, "rw")
+    kept: list[tuple[str, str, str]] = []
+    changed = False
+    found = False
+
+    for src, dst, mode in mounts:
+        if is_wolf_api_socket_mount(src, dst):
+            found = True
+            if (src, dst, mode) != desired:
+                changed = True
+            continue
+        kept.append((src, dst, mode))
+
+    if not found:
+        kept.append(desired)
+        changed = True
+    else:
+        kept.append(desired)
+
+    return kept, changed
+
+
+def ensure_env_entries(env: list[str], required: tuple[str, ...]) -> tuple[list[str], bool]:
+    existing_keys = {e.split("=", 1)[0] for e in env if "=" in e}
+    changed = False
+    new_env = list(env)
+    for entry in required:
+        key = entry.split("=", 1)[0]
+        if key not in existing_keys:
+            new_env.append(entry)
+            changed = True
+    return new_env, changed
+
+
+def patch_wolf_ui_env_block(block: str) -> tuple[str, bool]:
+    title_match = re.search(r'^\s*title\s*=\s*["\']([^"\']+)["\']', block, flags=re.MULTILINE)
+    if not title_match or title_match.group(1) != WOLF_UI_TITLE:
+        return block, False
+
+    span = find_bracket_array(block, "env")
+    if not span:
+        return block, False
+
+    start, end = span
+    env_text = block[start:end]
+    entries = parse_string_array(env_text)
+    entries, default_changed = ensure_env_entries(entries, WOLF_UI_DEFAULT_ENV)
+    entries, extra_changed = ensure_env_entries(entries, WOLF_UI_EXTRA_ENV)
+    changed = default_changed or extra_changed
+    if not changed:
+        return block, False
+
+    new_env = format_env_array(entries)
+    return block[:start] + new_env + block[end:], True
+
+
+def patch_wolf_ui_env_config(text: str) -> tuple[str, int]:
+    updated = 0
+    pattern = r"(?=^\s*\[\[(?:profiles\.)?apps\]\])"
+    parts = re.split(pattern, text, flags=re.MULTILINE)
+    out: list[str] = []
+
+    for part in parts:
+        if not part.strip():
+            continue
+        if not re.match(r"^\[\[(?:profiles\.)?apps\]\]", part.lstrip()):
+            out.append(part)
+            continue
+        new_part, changed = patch_wolf_ui_env_block(part)
+        if changed:
+            updated += 1
+        out.append(new_part)
+
+    return "".join(out), updated
+
+
+def patch_wolf_ui_socket_block(block: str, host_socket_path: str) -> tuple[str, bool]:
+    title_match = re.search(r'^\s*title\s*=\s*["\']([^"\']+)["\']', block, flags=re.MULTILINE)
+    if not title_match or title_match.group(1) != WOLF_UI_TITLE:
+        return block, False
+
+    mounts_span = find_bracket_array(block, "mounts")
+    if not mounts_span:
+        return block, False
+
+    start, end = mounts_span
+    mounts_text = block[start:end]
+    existing = sanitize_mounts(parse_mounts_array(mounts_text))
+    fixed, changed = fix_wolf_ui_socket_mounts(existing, host_socket_path)
+    new_block = block[:start] + format_mounts_array(fixed) + block[end:] if changed else block
+
+    new_block, env_changed = patch_wolf_ui_env_block(new_block)
+    return new_block, changed or env_changed
+
+
+def patch_wolf_ui_socket_config(text: str, host_socket_path: str) -> tuple[str, int]:
+    updated = 0
+    pattern = r"(?=^\s*\[\[(?:profiles\.)?apps\]\])"
+    parts = re.split(pattern, text, flags=re.MULTILINE)
+    out: list[str] = []
+
+    for part in parts:
+        if not part.strip():
+            continue
+        if not re.match(r"^\[\[(?:profiles\.)?apps\]\]", part.lstrip()):
+            out.append(part)
+            continue
+        new_part, changed = patch_wolf_ui_socket_block(part, host_socket_path)
+        if changed:
+            updated += 1
+        out.append(new_part)
+
+    return "".join(out), updated
+
+
+def patch_wolf_ui_socket_api(socket: Path, host_socket_path: str) -> int:
+    data = curl_unix_json(socket, "GET", "/api/v1/apps")
+    if not data.get("success"):
+        raise RuntimeError("GET /api/v1/apps returned success=false")
+
+    for app in data.get("apps") or []:
+        if app.get("title") != WOLF_UI_TITLE:
+            continue
+        runner = app.get("runner")
+        if not runner_is_docker(runner):
+            return 0
+
+        existing_raw = runner.get("mounts") or []
+        existing: list[tuple[str, str, str]] = []
+        for raw in existing_raw:
+            parsed = parse_mount_line(str(raw))
+            if parsed:
+                existing.append(parsed)
+
+        fixed, changed = fix_wolf_ui_socket_mounts(sanitize_mounts(existing), host_socket_path)
+        new_mounts = mount_strings(fixed)
+
+        app = dict(app)
+        app["runner"] = dict(runner)
+        app["runner"]["mounts"] = new_mounts
+        env = list(app["runner"].get("env") or [])
+        env, default_changed = ensure_env_entries(env, WOLF_UI_DEFAULT_ENV)
+        env, extra_changed = ensure_env_entries(env, WOLF_UI_EXTRA_ENV)
+        if default_changed or extra_changed:
+            app["runner"]["env"] = env
+            changed = True
+
+        if not changed:
+            return 0
+        app_id = app.get("id")
+        if not app_id:
+            return 0
+        curl_unix_json(socket, "POST", "/api/v1/apps/delete", {"id": app_id})
+        curl_unix_json(socket, "POST", "/api/v1/apps/add", app)
+        print("  Updated Wolf UI Wolf API socket mount via Wolf API")
+        return 1
+
+    return 0
 
 
 def patch_gow_required_env(
@@ -293,7 +503,7 @@ def patch_gow_required_devices(block: str, extra_paths: list[str]) -> tuple[str,
 
     start, end = span
     env_text = block[start:end]
-    entries = re.findall(r'"([^"]+)"', env_text)
+    entries = parse_string_array(env_text)
     if not entries:
         return block, False
 
@@ -301,13 +511,12 @@ def patch_gow_required_devices(block: str, extra_paths: list[str]) -> tuple[str,
     if not changed:
         return block, False
 
-    inner = ", ".join(f'"{entry}"' for entry in new_entries)
-    new_env = f"[{inner}]"
+    new_env = format_env_array(new_entries)
     return block[:start] + new_env + block[end:], True
 
 
 def patch_toml_block(block: str, paths: dict[str, str]) -> tuple[str, bool]:
-    title_match = re.search(r'^title\s*=\s*["\']([^"\']+)["\']', block, flags=re.MULTILINE)
+    title_match = re.search(r'^\s*title\s*=\s*["\']([^"\']+)["\']', block, flags=re.MULTILINE)
     if not title_match:
         return block, False
 
@@ -336,7 +545,7 @@ def patch_toml_block(block: str, paths: dict[str, str]) -> tuple[str, bool]:
 
 def patch_config_toml(text: str, paths: dict[str, str]) -> tuple[str, int]:
     updated = 0
-    pattern = r"(?=^\[\[(?:profiles\.)?apps\]\])"
+    pattern = r"(?=^\s*\[\[(?:profiles\.)?apps\]\])"
     parts = re.split(pattern, text, flags=re.MULTILINE)
     out: list[str] = []
 
@@ -433,41 +642,69 @@ def main() -> int:
         help="Wolf API Unix socket (Moonlight-profile apps only)",
     )
     parser.add_argument(
+        "--wolf-socket-host",
+        help="Host path to wolf.sock for Wolf UI session containers (Unraid appdata)",
+    )
+    parser.add_argument(
         "libraries",
         nargs="*",
-        help="ROMS BIOS MEDIA STEAM GAMES LUTRIS COMPAT paths",
+        help="ROMS BIOS MEDIA STEAM GAMES LUTRIS PRISM COMPAT paths",
     )
     args = parser.parse_args()
 
-    if args.socket:
-        lib_argv = args.libraries
-    else:
-        lib_argv = args.libraries
-
+    lib_argv = args.libraries
     paths = load_paths(lib_argv)
-    if not paths:
-        print("No library paths configured; skipping mount presets")
-        return 0
 
     exit_code = 0
     toml_count = 0
     api_count = 0
+    socket_count = 0
 
     cfg_path: Path | None = None
     if args.config and not args.config.startswith("-"):
         cfg_path = Path(args.config)
 
+    working_text: str | None = None
     if cfg_path and cfg_path.is_file():
-        original = cfg_path.read_text(encoding="utf-8")
-        patched, toml_count = patch_config_toml(original, paths)
-        if toml_count:
-            cfg_path.write_text(patched, encoding="utf-8")
-            print(f"Applied mount presets to {toml_count} app runner(s) in {cfg_path}")
-        else:
-            print(f"No app runners needed mount preset updates in {cfg_path}")
+        working_text = cfg_path.read_text(encoding="utf-8")
     elif cfg_path:
         print(f"Config not found: {cfg_path}", file=sys.stderr)
         exit_code = 1
+
+    if args.wolf_socket_host and working_text is not None:
+        patched, socket_count = patch_wolf_ui_socket_config(working_text, args.wolf_socket_host)
+        if socket_count:
+            cfg_path.write_text(patched, encoding="utf-8")  # type: ignore[union-attr]
+            print(
+                f"Fixed Wolf UI Wolf API socket mount in {socket_count} app runner(s) in {cfg_path}"
+            )
+            working_text = patched
+
+    if not paths:
+        if args.socket and args.wolf_socket_host:
+            sock = Path(args.socket)
+            if sock.is_socket():
+                try:
+                    api_count = patch_wolf_ui_socket_api(sock, args.wolf_socket_host)
+                except (RuntimeError, json.JSONDecodeError, OSError) as exc:
+                    print(f"Wolf UI socket mount API warning: {exc}", file=sys.stderr)
+        if not paths and not args.wolf_socket_host:
+            print("No library paths configured; skipping mount presets")
+        elif not paths:
+            print("No library paths configured; skipping library mount presets")
+        if not cfg_path and not args.socket:
+            parser.print_usage(file=sys.stderr)
+            return 2 if not args.wolf_socket_host else exit_code
+        return exit_code
+
+    if working_text is not None:
+        patched, toml_count = patch_config_toml(working_text, paths)
+        if toml_count:
+            cfg_path.write_text(patched, encoding="utf-8")  # type: ignore[union-attr]
+            print(f"Applied mount presets to {toml_count} app runner(s) in {cfg_path}")
+        elif not socket_count:
+            print(f"No app runners needed mount preset updates in {cfg_path}")
+        working_text = patched
 
     if args.socket:
         sock = Path(args.socket)
@@ -477,13 +714,15 @@ def main() -> int:
                 return 1
         else:
             try:
-                api_count = patch_config_api(sock, paths)
+                if args.wolf_socket_host:
+                    api_count += patch_wolf_ui_socket_api(sock, args.wolf_socket_host)
+                api_count += patch_config_api(sock, paths)
             except (RuntimeError, json.JSONDecodeError, OSError) as exc:
                 print(f"Wolf API mount preset warning: {exc}", file=sys.stderr)
             else:
                 if api_count:
                     print(f"Applied mount presets to {api_count} Moonlight app(s) via Wolf API")
-                elif not toml_count:
+                elif not toml_count and not socket_count:
                     print("No apps needed mount preset updates")
 
     if not cfg_path and not args.socket:

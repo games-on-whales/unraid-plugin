@@ -52,8 +52,12 @@ restore_pairing_state() {
 
 count_paired_clients() {
     local cfg_file="${1:-$(pairing_cfg_dir)/config.toml}"
-    [[ -f "$cfg_file" ]] || { echo 0; return; }
-    grep -c '^\[\[paired_clients\]\]' "$cfg_file" 2>/dev/null || echo 0
+    if [[ ! -f "$cfg_file" ]]; then
+        echo 0
+        return
+    fi
+    # grep -c prints 0 with exit 1 when there are no matches — do not append "|| echo 0"
+    grep -c '^\[\[paired_clients\]\]' "$cfg_file" 2>/dev/null || true
 }
 
 pairing_state_summary() {
@@ -103,6 +107,8 @@ verify_pairing_state() {
     backup_dir="$(pairing_backup_dir)"
     summary="$(pairing_state_summary)"
     paired="${summary#*:}"
+    paired="${paired//[$'\r\n ']/}"
+    paired="${paired:-0}"
 
     case "${summary%%:*}" in
         ok)

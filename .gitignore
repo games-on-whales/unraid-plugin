@@ -7,8 +7,14 @@ gow-dev.plg
 **/__pycache__/
 *.py[cod]
 .env
-.env.*
+unraid-dev/.env
+!.env.example
+!unraid-dev/.env.example
 
 # Local dev PLG (see DEVELOPING.md); never commit credentials
 *.local.plg
+
+# Machine-specific remote deploy helpers (use generic remote-deploy.py locally)
+unraid-dev/*-dudserver.py
+unraid-dev/.env
 
