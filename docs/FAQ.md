@@ -170,16 +170,17 @@ restored platform.
 
 ## Health check
 
-The settings dashboard includes a **Health check** panel (refreshes every 30
-seconds) that verifies:
+The settings dashboard includes a **Health check** panel that verifies:
 
 - Docker, Wolf, and Wolf Den are running
+- Wolf Den HTTP on the configured port
 - GPU render node and NVIDIA Wayland settings (if applicable)
 - Pairing files and Moonlight client count
-- Wolf Den HTTP response
-- Boot auto-start hook and udev rules
-- Library mount presets in `config.toml` (when ROM/BIOS paths are configured)
-- Stale session containers and OOM state
+- Boot auto-start hook and virtual-input udev rules
+- Library mount presets in `config.toml` (when ROM paths are configured)
+- Wolf API Unix socket and stale session containers / OOM state
+
+Refresh the settings page to run checks again.
 
 From the Unraid terminal:
 
@@ -194,13 +195,14 @@ NVIDIA settings, library paths, ghcr.io reachability).
 
 ### Fix all (one click)
 
-When the dashboard health is not **healthy**, use **Fix all** on the health
-panel (or Advanced). It runs, in order:
+When the dashboard health is not **healthy**, use **Fix mounts** (Advanced) or
+**Fix all** on the health panel. Both run, in order:
 
 1. Cleanup stale Wolf session containers
-2. Re-apply ROM/BIOS/media mount presets in `config.toml`
-3. Restore ES-DE Custom Scripts config
-4. Restart Wolf + Wolf Den
+2. Re-apply ROM/BIOS/media mount presets (`config.toml` and optional Wolf API)
+3. Restart Wolf + Wolf Den
+
+For ES-DE-specific launcher config, use **Repair ES-DE** separately (Advanced).
 
 From the terminal:
 

@@ -73,7 +73,7 @@ function default_cfg() {
         'BIOS_LIBRARY'      => '/mnt/user/games/bioses',
         'MEDIA_LIBRARY'     => '/mnt/user/games/media',
         'LUTRIS_LIBRARY'    => '/mnt/user/games/lutris',
-        'COMPAT_TOOLS_PATH' => DEFAULT_APPDATA . '/compatibilitytools.d',
+        'COMPAT_TOOLS_PATH' => '/mnt/user/appdata/gow/compatibilitytools.d',
         'WOLF_MEMORY_LIMIT'     => '',
         'WOLF_DEN_MEMORY_LIMIT' => '',
         'DEPLOYED'          => 'false',
@@ -102,37 +102,125 @@ function load_cfg() {
 function save_cfg($cfg) {
     $dir = dirname(GOW_CFG);
     if (!is_dir($dir)) mkdir($dir, 0755, true);
+    $order = [
+        'APPDATA', 'RENDER_NODE', 'GPU_VENDOR', 'GPU_NAME', 'GPU_DRIVER',
+        'WOLF_DEN_PORT', 'WOLF_NETWORK_MODE', 'WOLF_NETWORK_NAME', 'WOLF_NETWORK_IPV4',
+        'ROMS_LIBRARY', 'BIOS_LIBRARY', 'STEAM_LIBRARY', 'GAMES_LIBRARY',
+        'MEDIA_LIBRARY', 'LUTRIS_LIBRARY', 'COMPAT_TOOLS_PATH',
+        'WOLF_IMAGE', 'WOLF_DEN_IMAGE', 'WOLF_ENCODER_NODE',
+        'WOLF_MEMORY_LIMIT', 'WOLF_DEN_MEMORY_LIMIT',
+        'DEPLOYED',
+    ];
     $out = '';
+    foreach ($order as $k) {
+        if (!array_key_exists($k, $cfg)) {
+            continue;
+        }
+        $v = $cfg[$k];
+        $quoted = "'" . str_replace("'", "'\\''", $v) . "'";
+        $out .= "$k=$quoted\n";
+    }
     foreach ($cfg as $k => $v) {
-        // Single-quote values so bash can safely source this file even when
-        // GPU_NAME contains spaces or brackets (e.g. "GeForce RTX 3060 LHR").
+        if (in_array($k, $order, true)) {
+            continue;
+        }
         $quoted = "'" . str_replace("'", "'\\''", $v) . "'";
         $out .= "$k=$quoted\n";
     }
     file_put_contents(GOW_CFG, $out);
 }
 
-function pick_root() {
-    // Trailing slash matches Docker/VM Manager settings (fileTree root matching).
-    return is_dir('/mnt/user/') ? '/mnt/user/' : '/mnt/';
+function gow_games_share_root(array $cfg) {
+    $games = rtrim($cfg['GAMES_LIBRARY'] ?? '', '/');
+    if ($games !== '') {
+        return $games;
+    }
+    $found = discover_existing_path(['/mnt/user/games', '/mnt/user/Games']);
+    return $found !== '' ? $found : '/mnt/user/games';
 }
 
-function unraid_share_names() {
-    $shares = [];
-    $root = rtrim(pick_root(), '/');
-    if (!is_dir($root)) {
-        return $shares;
+function gow_apply_standard_library_paths($games_root, array &$cfg) {
+    $games_root = rtrim($games_root, '/');
+    if ($games_root === '') {
+        return false;
     }
-    foreach (scandir($root) ?: [] as $entry) {
-        if ($entry === '.' || $entry === '..') {
+    $appdata = rtrim($cfg['APPDATA'] ?? DEFAULT_APPDATA, '/');
+    $cfg['GAMES_LIBRARY'] = $games_root;
+    $cfg['ROMS_LIBRARY'] = $games_root . '/roms';
+    $cfg['BIOS_LIBRARY'] = $games_root . '/bioses';
+    $cfg['STEAM_LIBRARY'] = $games_root . '/steam';
+    $cfg['LUTRIS_LIBRARY'] = $games_root . '/lutris';
+    $cfg['MEDIA_LIBRARY'] = $games_root . '/media';
+    if ($appdata !== '') {
+        $cfg['COMPAT_TOOLS_PATH'] = $appdata . '/compatibilitytools.d';
+    }
+    return true;
+}
+
+function gow_read_library_paths_from_post(array &$cfg) {
+    $cfg['STEAM_LIBRARY']     = normalize_optional_path($_POST['steam_library'] ?? '');
+    $cfg['GAMES_LIBRARY']     = normalize_optional_path($_POST['games_library'] ?? '');
+    $cfg['ROMS_LIBRARY']      = normalize_optional_path($_POST['roms_library'] ?? '');
+    $cfg['BIOS_LIBRARY']      = normalize_optional_path($_POST['bios_library'] ?? '');
+    $cfg['MEDIA_LIBRARY']     = normalize_optional_path($_POST['media_library'] ?? '');
+    $cfg['LUTRIS_LIBRARY']    = normalize_optional_path($_POST['lutris_library'] ?? '');
+    $cfg['COMPAT_TOOLS_PATH'] = normalize_optional_path($_POST['compat_tools_path'] ?? '');
+}
+
+function gow_validate_setup_paths(array $cfg) {
+    if (!valid_host_path($cfg['APPDATA'], true)) {
+        return 'Appdata path must be an absolute path under /mnt/.';
+    }
+    foreach ([
+        'STEAM_LIBRARY' => 'Steam library',
+        'GAMES_LIBRARY' => 'Games library',
+        'ROMS_LIBRARY' => 'ROMs library',
+        'BIOS_LIBRARY' => 'BIOS files path',
+        'MEDIA_LIBRARY' => 'Media library',
+        'LUTRIS_LIBRARY' => 'Lutris data path',
+        'COMPAT_TOOLS_PATH' => 'Compatibility tools path',
+    ] as $key => $label) {
+        if (!valid_host_path($cfg[$key] ?? '')) {
+            return "{$label} must be empty or an absolute path under /mnt/.";
+        }
+    }
+    return '';
+}
+
+function pick_root() {
+    // Prefer /mnt/ so folder browse can reach both user and cache pools.
+    if (is_dir('/mnt/user/') || is_dir('/mnt/cache/')) {
+        return '/mnt/';
+    }
+    return '/mnt/';
+}
+
+/** @return list<array{root:string,label:string,name:string}> */
+function unraid_share_entries() {
+    $entries = [];
+    foreach (['user' => '/mnt/user', 'cache' => '/mnt/cache'] as $label => $root) {
+        if (!is_dir($root)) {
             continue;
         }
-        if (is_dir($root . '/' . $entry)) {
-            $shares[] = $entry;
+        foreach (scandir($root) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            if (!is_dir($root . '/' . $entry)) {
+                continue;
+            }
+            $entries[] = [
+                'root'  => $root,
+                'label' => $label,
+                'name'  => $entry,
+            ];
         }
     }
-    sort($shares, SORT_NATURAL | SORT_FLAG_CASE);
-    return $shares;
+    usort($entries, static function ($a, $b) {
+        $cmp = strnatcasecmp($a['label'], $b['label']);
+        return $cmp !== 0 ? $cmp : strnatcasecmp($a['name'], $b['name']);
+    });
+    return $entries;
 }
 
 function gow_path_picker_attrs($pick_root) {
@@ -166,15 +254,29 @@ function discover_existing_path(array $candidates) {
 }
 
 function smart_path_map() {
+    // Keep in sync with scripts/detect-paths.sh candidate lists.
     return [
         'APPDATA' => ['/mnt/user/appdata/gow', '/mnt/cache/appdata/gow'],
-        'ROMS_LIBRARY' => ['/mnt/user/games/roms', '/mnt/user/roms', '/mnt/user/ROMs', '/mnt/user/retrogaming/roms'],
-        'BIOS_LIBRARY' => ['/mnt/user/games/bioses', '/mnt/user/bioses', '/mnt/user/bios', '/mnt/user/retrogaming/bios'],
+        'ROMS_LIBRARY' => [
+            '/mnt/user/games/roms', '/mnt/user/roms', '/mnt/user/ROMs', '/mnt/user/retrogaming/roms',
+            '/mnt/cache/games/roms', '/mnt/cache/roms', '/mnt/cache/ROMs',
+        ],
+        'BIOS_LIBRARY' => [
+            '/mnt/user/games/bioses', '/mnt/user/bioses', '/mnt/user/bios', '/mnt/user/retrogaming/bios',
+            '/mnt/cache/games/bioses', '/mnt/cache/bioses',
+        ],
         'STEAM_LIBRARY' => ['/mnt/user/games/steam', '/mnt/user/steam', '/mnt/cache/steam'],
-        'GAMES_LIBRARY' => ['/mnt/user/games', '/mnt/user/Games'],
-        'MEDIA_LIBRARY' => ['/mnt/user/games/media', '/mnt/user/media', '/mnt/user/Media'],
-        'LUTRIS_LIBRARY' => ['/mnt/user/games/lutris', '/mnt/user/appdata/gow/lutris', '/mnt/user/appdata/lutris', '/mnt/cache/appdata/gow/lutris'],
-        'COMPAT_TOOLS_PATH' => ['/mnt/user/appdata/gow/compatibilitytools.d', '/mnt/cache/appdata/gow/compatibilitytools.d'],
+        'GAMES_LIBRARY' => ['/mnt/user/games', '/mnt/user/Games', '/mnt/cache/games'],
+        'MEDIA_LIBRARY' => [
+            '/mnt/user/games/media', '/mnt/user/media', '/mnt/user/Media', '/mnt/cache/games/media',
+        ],
+        'LUTRIS_LIBRARY' => [
+            '/mnt/user/games/lutris', '/mnt/user/appdata/gow/lutris', '/mnt/user/appdata/lutris',
+            '/mnt/cache/appdata/gow/lutris',
+        ],
+        'COMPAT_TOOLS_PATH' => [
+            '/mnt/user/appdata/gow/compatibilitytools.d', '/mnt/cache/appdata/gow/compatibilitytools.d',
+        ],
     ];
 }
 
@@ -210,9 +312,9 @@ function path_status_label($path) {
 }
 
 function gow_path_field($id, $name, $label, $value, $pick_root, $help = '') {
-    static $shares = null;
-    if ($shares === null) {
-        $shares = unraid_share_names();
+    static $share_entries = null;
+    if ($share_entries === null) {
+        $share_entries = unraid_share_entries();
     }
     $status = path_status_label($value);
     $status_html = '';
@@ -223,17 +325,20 @@ function gow_path_field($id, $name, $label, $value, $pick_root, $help = '') {
     } elseif ($status === 'missing parent') {
         $status_html = '<span class="gow-path-status err">Parent share missing</span>';
     }
-    $share_root = rtrim($pick_root, '/');
     ?>
     <div class="gow-field">
       <label class="gow-label" for="<?= htmlspecialchars($id) ?>"><?= htmlspecialchars($label) ?></label>
       <div class="gow-path-row">
-        <?php if (!empty($shares)): ?>
+        <?php if (!empty($share_entries)): ?>
         <select class="gow-select gow-share-select" data-target="<?= htmlspecialchars($id) ?>"
                 aria-label="Jump to Unraid share for <?= htmlspecialchars($label) ?>">
           <option value="">Share…</option>
-          <?php foreach ($shares as $share): ?>
-            <option value="<?= htmlspecialchars($share_root . '/' . $share) ?>"><?= htmlspecialchars($share) ?></option>
+          <?php foreach ($share_entries as $entry): ?>
+            <?php
+              $share_path = $entry['root'] . '/' . $entry['name'];
+              $share_label = $entry['label'] . '/' . $entry['name'];
+            ?>
+            <option value="<?= htmlspecialchars($share_path) ?>"><?= htmlspecialchars($share_label) ?></option>
           <?php endforeach; ?>
         </select>
         <?php endif; ?>
@@ -557,32 +662,28 @@ $message = '';
 $error   = '';
 $force_setup = false;
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' && ($cfg['DEPLOYED'] ?? 'false') !== 'true') {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && (($cfg['DEPLOYED'] ?? 'false') !== 'true' || isset($_GET['setup']))) {
     apply_smart_path_defaults($cfg);
+    $games_share_root = gow_games_share_root($cfg);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'save_and_deploy') {
-        // Validate and persist GPU selection + appdata path
-        $cfg['RENDER_NODE'] = $_POST['render_node'] ?? '';
-        $cfg['APPDATA']     = rtrim($_POST['appdata'] ?? DEFAULT_APPDATA, '/');
-        $cfg['WOLF_DEN_PORT'] = trim($_POST['wolf_den_port'] ?? '8080');
-        $cfg['WOLF_NETWORK_MODE'] = $_POST['wolf_network_mode'] ?? 'host';
-        $cfg['WOLF_NETWORK_NAME'] = trim($_POST['wolf_network_name'] ?? '');
-        $cfg['WOLF_NETWORK_IPV4'] = trim($_POST['wolf_network_ipv4'] ?? '');
-        $cfg['STEAM_LIBRARY']     = normalize_optional_path($_POST['steam_library'] ?? '');
-        $cfg['GAMES_LIBRARY']     = normalize_optional_path($_POST['games_library'] ?? '');
-        $cfg['ROMS_LIBRARY']      = normalize_optional_path($_POST['roms_library'] ?? '');
-        $cfg['BIOS_LIBRARY']      = normalize_optional_path($_POST['bios_library'] ?? '');
-        $cfg['MEDIA_LIBRARY']     = normalize_optional_path($_POST['media_library'] ?? '');
-        $cfg['LUTRIS_LIBRARY']    = normalize_optional_path($_POST['lutris_library'] ?? '');
-        $cfg['COMPAT_TOOLS_PATH'] = normalize_optional_path($_POST['compat_tools_path'] ?? '');
-        $cfg['WOLF_MEMORY_LIMIT'] = strtoupper(trim($_POST['wolf_memory_limit'] ?? ''));
-        $cfg['WOLF_DEN_MEMORY_LIMIT'] = strtoupper(trim($_POST['wolf_den_memory_limit'] ?? ''));
+    if ($action === 'apply_games_layout' || $action === 'save_settings' || $action === 'save_and_deploy') {
+        $cfg['RENDER_NODE'] = $_POST['render_node'] ?? $cfg['RENDER_NODE'];
+        $cfg['APPDATA']     = rtrim($_POST['appdata'] ?? $cfg['APPDATA'] ?? DEFAULT_APPDATA, '/');
+        $cfg['WOLF_DEN_PORT'] = trim($_POST['wolf_den_port'] ?? $cfg['WOLF_DEN_PORT'] ?? '8080');
+        $cfg['WOLF_NETWORK_MODE'] = $_POST['wolf_network_mode'] ?? $cfg['WOLF_NETWORK_MODE'] ?? 'host';
+        $cfg['WOLF_NETWORK_NAME'] = trim($_POST['wolf_network_name'] ?? $cfg['WOLF_NETWORK_NAME'] ?? '');
+        $cfg['WOLF_NETWORK_IPV4'] = trim($_POST['wolf_network_ipv4'] ?? $cfg['WOLF_NETWORK_IPV4'] ?? '');
+        gow_read_library_paths_from_post($cfg);
+        if ($action === 'apply_games_layout') {
+            gow_apply_standard_library_paths(gow_games_share_root($cfg), $cfg);
+        }
+        $cfg['WOLF_MEMORY_LIMIT'] = strtoupper(trim($_POST['wolf_memory_limit'] ?? $cfg['WOLF_MEMORY_LIMIT'] ?? ''));
+        $cfg['WOLF_DEN_MEMORY_LIMIT'] = strtoupper(trim($_POST['wolf_den_memory_limit'] ?? $cfg['WOLF_DEN_MEMORY_LIMIT'] ?? ''));
 
-        // Look up vendor/name/driver from the selected node
         $gpus = detect_gpus();
         foreach ($gpus as $gpu) {
             if ($gpu['node'] === $cfg['RENDER_NODE']) {
@@ -594,7 +695,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (empty($cfg['RENDER_NODE'])) {
-            $error = 'Please select a GPU before installing.';
+            $error = 'Please select a GPU.';
         } elseif (empty($cfg['GPU_VENDOR'])) {
             $error = 'Selected GPU not recognised. Please refresh and try again.';
         } elseif (!valid_tcp_port($cfg['WOLF_DEN_PORT'])) {
@@ -607,41 +708,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Custom Wolf network requires a static IPv4 address.';
         } elseif ($cfg['WOLF_NETWORK_MODE'] === 'custom' && !valid_ipv4($cfg['WOLF_NETWORK_IPV4'])) {
             $error = 'Wolf static IPv4 address is invalid.';
-        } elseif (!valid_host_path($cfg['APPDATA'], true)) {
-            $error = 'Appdata path must be an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['STEAM_LIBRARY'])) {
-            $error = 'Steam library path must be empty or an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['GAMES_LIBRARY'])) {
-            $error = 'Games library path must be empty or an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['ROMS_LIBRARY'])) {
-            $error = 'ROMs library path must be empty or an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['BIOS_LIBRARY'])) {
-            $error = 'BIOS files path must be empty or an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['MEDIA_LIBRARY'])) {
-            $error = 'Media library path must be empty or an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['LUTRIS_LIBRARY'])) {
-            $error = 'Lutris data path must be empty or an absolute path under /mnt/.';
-        } elseif (!valid_host_path($cfg['COMPAT_TOOLS_PATH'])) {
-            $error = 'Compatibility tools path must be empty or an absolute path under /mnt/.';
+        } elseif (($path_err = gow_validate_setup_paths($cfg)) !== '') {
+            $error = $path_err;
         } elseif (!valid_memory_limit($cfg['WOLF_MEMORY_LIMIT'])) {
             $error = 'Wolf memory limit must be empty or like 6G / 8192M.';
         } elseif (!valid_memory_limit($cfg['WOLF_DEN_MEMORY_LIMIT'])) {
             $error = 'Wolf Den memory limit must be empty or like 512M.';
         } else {
+            if ($action === 'save_settings') {
+                $cfg['DEPLOYED'] = 'true';
+            }
             save_cfg($cfg);
-            // Run deploy in background; stream to log file (line-buffered when possible).
-            @unlink(DEPLOY_LOG);
-            $deploy_script = GOW_SCRIPT_DIR . '/deploy.sh';
-            $deploy_cmd = 'if command -v stdbuf >/dev/null 2>&1; then '
-                . 'stdbuf -oL -eL bash ' . escapeshellarg($deploy_script)
-                . '; else bash ' . escapeshellarg($deploy_script) . '; fi';
-            exec($deploy_cmd . ' > ' . DEPLOY_LOG . ' 2>&1 < /dev/null &');
-            // Use JavaScript redirect — PHP header() can be unreliable inside
-            // Unraid's plugin framework when headers have already been sent.
-            echo '<script>window.location.href = window.location.pathname + "?deploying=1";</script>';
-            exit;
+            if ($action === 'apply_games_layout') {
+                $message = 'Standard library folders set under ' . gow_games_share_root($cfg) . '. Review paths below, then Install or Save.';
+                $force_setup = true;
+            } elseif ($action === 'save_settings') {
+                if (file_exists(GOW_SCRIPT_DIR . '/apply-mount-presets.sh')) {
+                    exec('bash ' . escapeshellarg(GOW_SCRIPT_DIR . '/apply-mount-presets.sh') . ' 2>&1', $preset_out, $preset_ret);
+                }
+                echo '<script>window.location.href = window.location.pathname + "?saved=1";</script>';
+                exit;
+            } else {
+                @unlink(DEPLOY_LOG);
+                $deploy_script = GOW_SCRIPT_DIR . '/deploy.sh';
+                $deploy_cmd = 'if command -v stdbuf >/dev/null 2>&1; then '
+                    . 'stdbuf -oL -eL bash ' . escapeshellarg($deploy_script)
+                    . '; else bash ' . escapeshellarg($deploy_script) . '; fi';
+                exec($deploy_cmd . ' > ' . DEPLOY_LOG . ' 2>&1 < /dev/null &');
+                echo '<script>window.location.href = window.location.pathname + "?deploying=1";</script>';
+                exit;
+            }
         }
-        $force_setup = true;
+        if ($error !== '') {
+            $force_setup = true;
+        }
 
     } elseif ($action === 'start') {
         $compose = $cfg['APPDATA'] . '/docker-compose.yml';
@@ -735,7 +835,9 @@ $wolf_den_status = container_status('wolf-den');
 $compose_file    = $cfg['APPDATA'] . '/docker-compose.yml';
 $has_stack       = file_exists($compose_file) || $wolf_status !== 'not found' || $wolf_den_status !== 'not found';
 $setup_mode      = $force_setup || isset($_GET['setup']);
+$reconfigure_mode = $setup_mode && $has_stack;
 $deployed        = !$setup_mode && (($cfg['DEPLOYED'] === 'true') || $has_stack);
+$games_share_root = gow_games_share_root($cfg);
 $wolf_den_port   = valid_tcp_port($cfg['WOLF_DEN_PORT']) ? $cfg['WOLF_DEN_PORT'] : '8080';
 $wolf_den_url    = $ip ? "http://{$ip}:{$wolf_den_port}" : '';
 $pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
@@ -759,6 +861,7 @@ $health            = $deployed ? gow_run_health_checks($cfg) : gow_run_setup_hea
 $health_summary    = $health['summary'] ?? '';
 $install_ready     = gow_health_ready($health);
 $fixed_notice      = isset($_GET['fixed']);
+$saved_notice      = isset($_GET['saved']);
 ?>
 <link type="text/css" rel="stylesheet" href="/webGui/styles/jquery.filetree.css">
 <style>
@@ -823,8 +926,11 @@ $fixed_notice      = isset($_GET['fixed']);
   .gow-health-list .level-ok { color: var(--green-800); }
   .gow-health-list .level-warn { color: var(--orange-300); }
   .gow-health-list .level-fail { color: var(--red-800); }
-  .gow-steps { margin: 0; padding-left: 1.2em; }
+  .gow-steps { margin: 0 0 16px 0; padding-left: 1.2em; }
   .gow-steps li { margin-bottom: 8px; }
+  .gow-step-title { font-weight: 600; margin: 18px 0 8px 0; color: var(--text-color); }
+  .gow-step-title:first-of-type { margin-top: 0; }
+  .gow-layout-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0 14px 0; }
   .gow-msg       { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
   .gow-msg.ok    { background: var(--green-100); border: 1px solid var(--green-800); color: var(--green-800); }
   .gow-msg.err   { background: var(--red-100);   border: 1px solid var(--red-800);   color: var(--red-800); }
@@ -913,6 +1019,9 @@ $fixed_notice      = isset($_GET['fixed']);
 <?php if ($fixed_notice): ?>
   <div class="gow-msg ok">Fix mounts completed — sessions cleaned, mounts re-applied, Wolf restarted.</div>
 <?php endif; ?>
+<?php if ($saved_notice): ?>
+  <div class="gow-msg ok">Settings saved and library mounts updated. Use <strong>Save &amp; redeploy</strong> under Reconfigure if you changed appdata, GPU, or network.</div>
+<?php endif; ?>
 
 <?php if ($deploying): ?>
 <div class="gow-card" id="gow-progress-card" data-log-action="deploy">
@@ -992,7 +1101,12 @@ $fixed_notice      = isset($_GET['fixed']);
 
 <?php if ($welcome_notice): ?>
   <div class="gow-msg ok">
-    <strong>Wolf is deployed.</strong> Pair Moonlight below, then launch an app from Wolf Den or Moonlight.
+    <strong>Wolf is installed.</strong> Next steps:
+    <ol class="gow-steps" style="margin-top:10px;margin-bottom:0">
+      <li><a href="<?= htmlspecialchars($pairing_url) ?>" target="_blank">Pair Moonlight</a> in Wolf Den</li>
+      <li>Add the server in Moonlight as <strong><?= htmlspecialchars($moonlight_host ?: $ip ?: 'your Unraid IP') ?></strong></li>
+      <li>Launch an app from Moonlight or manage runners in Wolf Den</li>
+    </ol>
   </div>
 <?php endif; ?>
 
@@ -1051,6 +1165,10 @@ $fixed_notice      = isset($_GET['fixed']);
     <tr><th><?= htmlspecialchars($mount[0]) ?></th><td><?= htmlspecialchars($mount[1]) ?></td></tr>
     <?php endforeach; ?>
   </table>
+  <p class="gow-section-note" style="margin-top:12px">
+    To change library paths, use <strong>Advanced → Reconfigure</strong>, then <strong>Save settings</strong>
+    (paths only) or <strong>Save &amp; redeploy</strong> (appdata/network/GPU).
+  </p>
 </div>
 
 <div class="gow-card">
@@ -1123,8 +1241,8 @@ $fixed_notice      = isset($_GET['fixed']);
           <?php gow_csrf_field(); ?>
           <input type="hidden" name="action" value="reconfigure">
           <button type="submit" class="gow-btn gow-btn-secondary"
-                  onclick="return confirm('Reopen setup to change GPU and paths?')">
-            Reconfigure
+                  onclick="return confirm('Open setup to change GPU, library paths, or network?')">
+            Reconfigure…
           </button>
         </form>
         <form method="post" style="display:inline">
@@ -1143,14 +1261,26 @@ $fixed_notice      = isset($_GET['fixed']);
 <?php else: ?>
 <!-- ── Setup form ─────────────────────────────────────────────────────────── -->
 <div class="gow-card">
-  <div class="gow-title">Setup</div>
-  <p class="gow-section-note">Select your GPU, set appdata and library paths, then Install.</p>
+  <div class="gow-title"><?= $reconfigure_mode ? 'Reconfigure' : 'Setup' ?></div>
+  <?php if ($reconfigure_mode): ?>
+  <p class="gow-section-note">
+    Change GPU, paths, or network here. <strong>Save settings</strong> updates library mounts in Wolf;
+    <strong>Save &amp; redeploy</strong> regenerates Docker Compose and restarts the stack (needed for appdata or network changes).
+  </p>
+  <?php else: ?>
+  <ol class="gow-steps">
+    <li><strong>Essentials</strong> — GPU, Wolf appdata, and Wolf Den port</li>
+    <li><strong>Libraries</strong> — where ROMs, Steam, and Lutris live on Unraid (use the standard layout if you use one <code>games</code> share)</li>
+    <li><strong>Install</strong> — pulls images, writes compose, starts Wolf</li>
+  </ol>
+  <?php endif; ?>
 
   <?php gow_render_health_card($health, ['deployed' => false]); ?>
 
-  <form method="post">
+  <form method="post" id="gow-setup-form">
     <?php gow_csrf_field(); ?>
-    <input type="hidden" name="action" value="save_and_deploy">
+
+    <p class="gow-step-title">1. Essentials</p>
 
     <div class="gow-field">
       <label class="gow-label" for="render_node">GPU</label>
@@ -1169,33 +1299,57 @@ $fixed_notice      = isset($_GET['fixed']);
       <?php endif; ?>
     </div>
 
-    <?php gow_path_field('appdata', 'appdata', 'Appdata', $cfg['APPDATA'], $pick_root, 'Wolf config, certs, and saved state.'); ?>
+    <?php gow_path_field('appdata', 'appdata', 'Appdata', $cfg['APPDATA'], $pick_root, 'Wolf config, pairing certs, and compose file. Usually appdata/gow on your flash pool.'); ?>
 
     <div class="gow-field">
       <label class="gow-label" for="wolf_den_port">Wolf Den port</label>
       <input type="number" name="wolf_den_port" id="wolf_den_port" class="gow-input"
              value="<?= htmlspecialchars($wolf_den_port) ?>"
              min="1" max="65535" step="1">
-      <p class="gow-help">Web UI for pairing and managing apps. Default is 8080.</p>
+      <p class="gow-help">Web UI for pairing Moonlight and editing apps. Default 8080.</p>
     </div>
 
+    <p class="gow-step-title">2. Game libraries</p>
+
     <details class="gow-details" id="gow-library-details"<?= $library_open ? ' open' : '' ?>>
-      <summary>Library &amp; game folders<span class="gow-details-hint">ROMs, Steam, Lutris…</span></summary>
+      <summary>ROMs, Steam, Lutris, and other folders<span class="gow-details-hint"><?= htmlspecialchars($games_share_root) ?></span></summary>
       <div class="gow-details-body">
-        <p class="gow-section-note">Pick a share from the dropdown, then click the path field or folder icon to browse subfolders. Wolf always uses paths under your GoW appdata folder; if you choose a folder elsewhere, the plugin symlinks it there on install.</p>
+        <p class="gow-section-note">
+          These host folders are mounted into game containers (ES-DE, RetroArch, Steam, etc.).
+          If a path is outside appdata, the plugin creates a symlink under <code><?= htmlspecialchars(rtrim($cfg['APPDATA'] ?? DEFAULT_APPDATA, '/')) ?></code> on install.
+        </p>
+
+        <?php gow_path_field('games_library', 'games_library', 'Games share (root)', $cfg['GAMES_LIBRARY'], $pick_root,
+            'Top-level folder for PC games and the standard subfolders below.'); ?>
+
+        <div class="gow-layout-actions">
+          <button type="submit" name="action" value="apply_games_layout" class="gow-btn gow-btn-secondary">
+            Use standard layout under games share
+          </button>
+        </div>
+        <p class="gow-help" style="margin-top:0">
+          Sets <code>roms</code>, <code>bioses</code>, <code>steam</code>, <code>lutris</code>, and <code>media</code> as subfolders of the games share.
+          Compatibility tools stay under appdata. This overwrites the library path fields above — use it once when adopting the standard layout.
+        </p>
 
         <?php
-          gow_path_field('roms_library', 'roms_library', 'ROMs', $cfg['ROMS_LIBRARY'], $pick_root);
-          gow_path_field('bios_library', 'bios_library', 'BIOS files', $cfg['BIOS_LIBRARY'], $pick_root);
-          gow_path_field('steam_library', 'steam_library', 'Steam', $cfg['STEAM_LIBRARY'], $pick_root);
-          gow_path_field('games_library', 'games_library', 'PC games', $cfg['GAMES_LIBRARY'], $pick_root);
-          gow_path_field('lutris_library', 'lutris_library', 'Lutris data', $cfg['LUTRIS_LIBRARY'], $pick_root,
-              'Default: ' . DEFAULT_APPDATA . '/lutris');
-          gow_path_field('media_library', 'media_library', 'Media', $cfg['MEDIA_LIBRARY'], $pick_root);
-          gow_path_field('compat_tools_path', 'compat_tools_path', 'Compatibility tools', $cfg['COMPAT_TOOLS_PATH'], $pick_root);
+          gow_path_field('roms_library', 'roms_library', 'ROMs', $cfg['ROMS_LIBRARY'], $pick_root,
+              'EmulationStation, RetroArch, Pegasus.');
+          gow_path_field('bios_library', 'bios_library', 'BIOS files', $cfg['BIOS_LIBRARY'], $pick_root,
+              'Emulator system files (not game ROMs).');
+          gow_path_field('steam_library', 'steam_library', 'Steam', $cfg['STEAM_LIBRARY'], $pick_root,
+              'Steam library / userdata.');
+          gow_path_field('lutris_library', 'lutris_library', 'Lutris', $cfg['LUTRIS_LIBRARY'], $pick_root,
+              'Lutris games and config.');
+          gow_path_field('media_library', 'media_library', 'Media', $cfg['MEDIA_LIBRARY'], $pick_root,
+              'Disc images and videos for Kodi / ES-DE.');
+          gow_path_field('compat_tools_path', 'compat_tools_path', 'Compatibility tools', $cfg['COMPAT_TOOLS_PATH'], $pick_root,
+              'Custom Proton builds for Steam (usually under appdata).');
         ?>
       </div>
     </details>
+
+    <p class="gow-step-title">3. Optional</p>
 
     <details class="gow-details" id="gow-network-details"<?= $network_open ? ' open' : '' ?>>
       <summary>Network<span class="gow-details-hint"><?= htmlspecialchars(network_summary($wolf_network_mode, $wolf_network_name, $wolf_network_ipv4)) ?></span></summary>
@@ -1270,9 +1424,18 @@ $fixed_notice      = isset($_GET['fixed']);
 
     <div class="gow-actions" style="margin-top:16px">
       <?php if (!empty($gpus)): ?>
-        <button type="submit" class="gow-btn gow-btn-primary"<?= $install_ready ? '' : ' title="Fix failed health checks above first"' ?>>
-          Install with these settings
+        <?php if ($reconfigure_mode): ?>
+        <button type="submit" name="action" value="save_settings" class="gow-btn gow-btn-secondary">
+          Save settings
         </button>
+        <button type="submit" name="action" value="save_and_deploy" class="gow-btn gow-btn-primary"<?= $install_ready ? '' : ' title="Fix failed health checks above first"' ?>>
+          Save &amp; redeploy Wolf
+        </button>
+        <?php else: ?>
+        <button type="submit" name="action" value="save_and_deploy" class="gow-btn gow-btn-primary"<?= $install_ready ? '' : ' title="Fix failed health checks above first"' ?>>
+          Install Wolf
+        </button>
+        <?php endif; ?>
       <?php endif; ?>
     </div>
   </form>
@@ -1323,7 +1486,7 @@ $fixed_notice      = isset($_GET['fixed']);
         }
         const failed = (data.text || '').indexOf('ERROR:') !== -1;
         const target = window.location.pathname
-          + (failed ? '?setup=1&deploy_error=1' : '');
+          + (failed ? '?setup=1&deploy_error=1' : '?welcome=1');
         window.setTimeout(() => { window.location.href = target; }, 800);
       })
       .catch(() => setTimeout(poll, pollMs + 1000));

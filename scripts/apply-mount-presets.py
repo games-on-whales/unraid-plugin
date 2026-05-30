@@ -19,6 +19,24 @@ from pathlib import Path
 TITLE_ALIASES: dict[str, str] = {
     "Prism Launcher": "Prismlauncher",
     "Heroic": "Heroic Games Launcher",
+    "ES-DE": "EmulationStation",
+    "ESDE": "EmulationStation",
+    "EmulationStation Desktop Edition": "EmulationStation",
+}
+
+# Normalized alias lookup (lowercased, non-alphanumerics stripped).
+_NORMALIZED_ALIASES: dict[str, str] = {
+    "esde": "EmulationStation",
+    "emulationstationdesktopedition": "EmulationStation",
+    "emustation": "EmulationStation",
+    "retroarchra": "RetroArch",
+    "xfce": "Desktop (xfce)",
+    "desktop": "Desktop (xfce)",
+    "xfcedesktop": "Desktop (xfce)",
+    "heroic": "Heroic Games Launcher",
+    "heroicgameslauncher": "Heroic Games Launcher",
+    "prism": "Prismlauncher",
+    "prismlauncher": "Prismlauncher",
 }
 
 # title -> list of (config key, container destination)
@@ -173,10 +191,17 @@ def normalize_gow_required_value(value: str, allowed_path_tokens: set[str]) -> s
     return " ".join(kept)
 
 
+def _normalize_title(title: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
 def preset_key(title: str) -> str | None:
     aliased = TITLE_ALIASES.get(title, title)
     if aliased in APP_PRESETS or aliased in HOME_MOUNT_ALIASES:
         return aliased
+    normalized = _NORMALIZED_ALIASES.get(_normalize_title(aliased))
+    if normalized and (normalized in APP_PRESETS or normalized in HOME_MOUNT_ALIASES):
+        return normalized
     lower = aliased.lower()
     for key in APP_PRESETS:
         if key.lower() == lower:
