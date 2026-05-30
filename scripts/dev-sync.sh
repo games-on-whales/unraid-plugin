@@ -19,6 +19,7 @@ SCRIPT_NAMES=(
   run-python3.sh rom-platform-dirs.sh
   pairing-state.sh repair-esde.sh repair-pegasus.sh repair-frontend-lib.sh detect-paths.sh health-check.sh fix-all.sh
   cleanup-wolf-sessions.sh apply-ui.sh hotfix-page.sh dev-sync.sh dev-test.sh
+  diagnose-mounts.sh diagnose-steam-lutris-launch.sh diagnose-esde-launch.sh
 )
 
 mkdir -p "$GOW_PLUGIN/scripts"

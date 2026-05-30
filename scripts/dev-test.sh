@@ -89,6 +89,16 @@ mounts = []
 env = ["GOW_REQUIRED_DEVICES=/dev/input/*"]
 
 [[profiles.apps]]
+title = "Lutris"
+
+[profiles.apps.runner]
+type = "docker"
+name = "WolfLutris"
+image = "ghcr.io/games-on-whales/lutris:edge"
+mounts = ["lutris:/var/lutris/:rw"]
+env = ["RUN_SWAY=1", "GOW_REQUIRED_DEVICES=/dev/input/event* /dev/dri/* /dev/nvidia* /var/lutris/"]
+
+[[profiles.apps]]
 title = "RetroArch"
 
 [profiles.apps.runner]
@@ -107,6 +117,26 @@ name = "WolfPegasus"
 image = "ghcr.io/games-on-whales/pegasus:edge"
 mounts = []
 env = ["GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/*"]
+
+[[profiles.apps]]
+title = "Kodi"
+
+[profiles.apps.runner]
+type = "docker"
+name = "WolfKodi"
+image = "ghcr.io/games-on-whales/kodi:edge"
+mounts = []
+env = ["GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /media/"]
+
+[[profiles.apps]]
+title = "Desktop (xfce)"
+
+[profiles.apps.runner]
+type = "docker"
+name = "WolfXFCE"
+image = "ghcr.io/games-on-whales/xfce:edge"
+mounts = []
+env = ["GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /games/"]
 EOF
 
 COMPAT="/mnt/user/appdata/gow/compatibilitytools.d"
@@ -182,6 +212,77 @@ if grep -A12 'title = "Pegasus"' "$TMP/config.toml" | grep -q '/mnt/user/games/r
     pass "Pegasus ROM mount"
 else
     fail "Pegasus ROM mount missing"
+fi
+
+if grep -A16 'title = "Steam"' "$TMP/config.toml" | grep -q '/mnt/user/games/steam:/home/retro/.local/share/Steam:rw'; then
+    pass "Steam library mount"
+else
+    fail "Steam library mount missing"
+fi
+
+if grep -A16 'title = "Lutris"' "$TMP/config.toml" | grep -q '/mnt/user/games/lutris:/var/lutris:rw'; then
+    pass "Lutris data mount"
+else
+    fail "Lutris data mount missing"
+fi
+
+if grep -A16 'title = "Lutris"' "$TMP/config.toml" | grep -qE '["'\'']lutris:/var/lutris'; then
+    fail "Lutris still has placeholder lutris: mount source"
+else
+    pass "Lutris placeholder mount removed"
+fi
+
+if grep -A12 'title = "Heroic"' "$TMP/config.toml" | grep -q '/var/lutris/'; then
+    fail "Heroic still has stale /var/lutris/ in GOW_REQUIRED_DEVICES"
+else
+    pass "Heroic GOW_REQUIRED_DEVICES pruned"
+fi
+
+if grep -A16 'title = "Steam"' "$TMP/config.toml" | grep -q 'compatibilitytools.d'; then
+    pass "Steam compatibility tools mount"
+else
+    fail "Steam compat mount missing"
+fi
+
+if grep -A12 'title = "Kodi"' "$TMP/config.toml" | grep -q '/mnt/user/games/media:/media:rw'; then
+    pass "Kodi media mount"
+else
+    fail "Kodi media mount missing"
+fi
+
+if grep -A12 'title = "Desktop (xfce)"' "$TMP/config.toml" | grep -q '/mnt/user/games:/games:rw'; then
+    pass "Desktop (xfce) /games mount"
+else
+    fail "Desktop (xfce) /games mount missing"
+fi
+
+if ! grep -q '/etc/wolf/roms:/ROMs' "$TMP/config.toml"; then
+    pass "Legacy /etc/wolf/roms mount removed"
+else
+    fail "Legacy /etc/wolf/roms mount still present"
+fi
+
+echo "==> dev-test: sanitize-only (no library paths)"
+SAN_TMP="$(mktemp -d)"
+cat > "$SAN_TMP/config.toml" <<'EOF'
+[[profiles.apps]]
+title = "Lutris"
+
+[profiles.apps.runner]
+type = "docker"
+mounts = ["lutris:/var/lutris/:rw"]
+env = ["GOW_REQUIRED_DEVICES=/dev/input/* /var/lutris/"]
+EOF
+python3 "$SCRIPTS/apply-mount-presets.py" "$SAN_TMP/config.toml" >/dev/null
+if grep -qE '["'\'']lutris:/var/lutris' "$SAN_TMP/config.toml"; then
+    fail "sanitize-only left Lutris placeholder mount"
+else
+    pass "sanitize-only removes Lutris placeholder"
+fi
+if grep -q '/var/lutris/' "$SAN_TMP/config.toml"; then
+    fail "sanitize-only left stale /var/lutris/ in GOW_REQUIRED_DEVICES"
+else
+    pass "sanitize-only prunes stale /var/lutris/ token"
 fi
 
 echo "==> dev-test: ROM root detection (nested roms/roms)"

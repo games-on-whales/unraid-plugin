@@ -52,7 +52,7 @@ LIB_ARGS=(
 )
 
 if [[ -z "$ROMS_LIBRARY$BIOS_LIBRARY$MEDIA_LIBRARY$STEAM_LIBRARY$GAMES_LIBRARY$LUTRIS_LIBRARY$PRISM_LIBRARY$COMPAT_TOOLS_PATH" ]]; then
-    info "No shared library paths configured; skipping library mount presets"
+    info "No shared library paths configured; will still sanitize Wolf app runner mounts"
 fi
 
 if [[ ! -f "$CFG_FILE" ]] && ! gow_wolf_api_ready "$APPDATA"; then

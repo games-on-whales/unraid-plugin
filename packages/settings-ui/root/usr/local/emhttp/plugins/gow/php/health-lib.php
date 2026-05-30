@@ -254,8 +254,7 @@ function gow_health_audit_rom_library_path(array $cfg) {
 }
 
 function gow_health_audit_library_mounts(array $cfg, string $cfg_file) {
-    $roms = rtrim($cfg['ROMS_LIBRARY'] ?? '', '/');
-    if ($roms === '' || !is_readable($cfg_file)) {
+    if (!is_readable($cfg_file)) {
         return gow_health_item('ok', 'Library mount presets', '');
     }
 
@@ -265,26 +264,71 @@ function gow_health_audit_library_mounts(array $cfg, string $cfg_file) {
     }
 
     $issues = [];
+    if (preg_match('#/etc/wolf/[^"\']+:[^"\']+#', $text)) {
+        $issues[] = 'app runner uses /etc/wolf/* as mount source (use host share path)';
+    }
+    if (preg_match('#["\']lutris:/var/lutris#', $text)) {
+        $issues[] = 'Lutris has placeholder lutris: mount (not a host path)';
+    }
     if (preg_match('#/etc/wolf/roms:/ROMs#', $text)) {
         $issues[] = 'found /etc/wolf/roms → /ROMs (use host share path)';
     }
-    if (gow_health_esde_titles_present($text) && strpos($text, $roms . ':/ROMs') === false) {
-        $issues[] = 'ES-DE missing host ROM bind';
+
+    $roms = rtrim($cfg['ROMS_LIBRARY'] ?? '', '/');
+    if ($roms !== '') {
+        if (gow_health_esde_titles_present($text) && strpos($text, $roms . ':/ROMs') === false) {
+            $issues[] = 'ES-DE missing host ROM bind';
+        }
+        if (strpos($text, 'title = "RetroArch"') !== false
+            && strpos($text, $roms . ':/ROMs') === false) {
+            $issues[] = 'RetroArch missing host ROM bind';
+        }
+        if (strpos($text, 'title = "Pegasus"') !== false
+            && strpos($text, $roms . ':/ROMs') === false) {
+            $issues[] = 'Pegasus missing host ROM bind';
+        }
     }
-    if (strpos($text, 'title = "RetroArch"') !== false
-        && strpos($text, $roms . ':/ROMs') === false) {
-        $issues[] = 'RetroArch missing host ROM bind';
+
+    $steam = rtrim($cfg['STEAM_LIBRARY'] ?? '', '/');
+    if ($steam !== ''
+        && strpos($text, 'title = "Steam"') !== false
+        && strpos($text, $steam . ':/home/retro/.local/share/Steam') === false) {
+        $issues[] = 'Steam missing host library bind';
     }
-    if (strpos($text, 'title = "Pegasus"') !== false
-        && strpos($text, $roms . ':/ROMs') === false) {
-        $issues[] = 'Pegasus missing host ROM bind';
+
+    $lutris = rtrim($cfg['LUTRIS_LIBRARY'] ?? '', '/');
+    if ($lutris !== ''
+        && strpos($text, 'title = "Lutris"') !== false
+        && strpos($text, $lutris . ':/var/lutris') === false) {
+        $issues[] = 'Lutris missing host data bind';
     }
+
+    $media = rtrim($cfg['MEDIA_LIBRARY'] ?? '', '/');
+    if ($media !== ''
+        && strpos($text, 'title = "Kodi"') !== false
+        && strpos($text, $media . ':/media') === false) {
+        $issues[] = 'Kodi missing host media bind';
+    }
+
+    $games = rtrim($cfg['GAMES_LIBRARY'] ?? '', '/');
+    if ($games !== ''
+        && (strpos($text, 'title = "Heroic"') !== false
+            || strpos($text, 'title = "Desktop (xfce)"') !== false)
+        && strpos($text, $games . ':/games') === false) {
+        $issues[] = 'Heroic/Desktop missing host /games bind';
+    }
+
     $prism = rtrim($cfg['PRISM_LIBRARY'] ?? '', '/');
     if ($prism !== ''
         && (strpos($text, 'title = "Prismlauncher"') !== false
             || strpos($text, 'title = "Prism Launcher"') !== false)
         && strpos($text, $prism . ':/games/prismlauncher') === false) {
         $issues[] = 'Prismlauncher missing host data bind';
+    }
+
+    if (preg_match('#GOW_REQUIRED_DEVICES=[^"\']*/var/lutris/#', $text)
+        && strpos($text, ':/var/lutris') === false) {
+        $issues[] = 'stale /var/lutris/ in GOW_REQUIRED_DEVICES without Lutris mount';
     }
 
     if (empty($issues)) {

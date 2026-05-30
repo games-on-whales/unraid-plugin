@@ -98,14 +98,25 @@ GOW_PATH_TOKENS = ("/ROMs/", "/bioses/", "/media/", "/var/lutris/", "/games/")
 
 
 def parse_mount_line(line: str) -> tuple[str, str, str] | None:
+    """Parse host:dest[:mode]. Mode is always the last :ro|:rw suffix when present."""
     line = line.strip().strip(",").strip('"').strip("'")
     if not line:
         return None
-    parts = line.split(":")
-    if len(parts) < 2:
+    mode = "rw"
+    body = line
+    if line.endswith(":ro"):
+        mode = "ro"
+        body = line[:-3]
+    elif line.endswith(":rw"):
+        mode = "rw"
+        body = line[:-3]
+    sep = body.find(":")
+    if sep < 0:
         return None
-    mode = parts[2] if len(parts) >= 3 else "rw"
-    return parts[0], parts[1], mode
+    src, dst = body[:sep], body[sep + 1 :]
+    if not src or not dst:
+        return None
+    return src, dst, mode
 
 
 def parse_mounts_array(text: str) -> list[tuple[str, str, str]]:
@@ -172,13 +183,23 @@ def find_bracket_array(block: str, key: str) -> tuple[int, int] | None:
     return None
 
 
+def normalize_mount_dest(dest: str) -> str:
+    """Canonical container path for merge/dedup (/var/lutris/ == /var/lutris)."""
+    stripped = dest.rstrip("/")
+    return stripped if stripped else "/"
+
+
 def merge_mounts(
     existing: list[tuple[str, str, str]],
     desired: list[tuple[str, str, str]],
 ) -> list[tuple[str, str, str]]:
-    by_dest = {dst: (src, dst, mode) for src, dst, mode in existing}
+    by_dest: dict[str, tuple[str, str, str]] = {}
+    for src, dst, mode in existing:
+        nd = normalize_mount_dest(dst)
+        by_dest[nd] = (src, nd, mode)
     for src, dst, mode in desired:
-        by_dest[dst] = (src, dst, mode)
+        nd = normalize_mount_dest(dst)
+        by_dest[nd] = (src, nd, mode)
     return list(by_dest.values())
 
 
@@ -189,13 +210,16 @@ def sanitize_mounts(mounts: list[tuple[str, str, str]]) -> list[tuple[str, str, 
             continue
         if src.startswith("/etc/wolf/"):
             continue
-        cleaned.append((src, dst, mode))
+        # Drop Wolf template placeholders like lutris:/var/lutris/:rw (not a host path).
+        if not src.startswith("/"):
+            continue
+        cleaned.append((src, normalize_mount_dest(dst), mode))
     return cleaned
 
 
 def required_device_paths(mounts: list[tuple[str, str, str]]) -> list[str]:
     paths: list[str] = []
-    destinations = {dst for _, dst, _ in mounts}
+    destinations = {normalize_mount_dest(dst) for _, dst, _ in mounts}
     if "/ROMs" in destinations or "/home/retro/ROMs" in destinations:
         paths.append("/ROMs/")
     if "/bioses" in destinations or "/home/retro/bioses" in destinations:
@@ -494,9 +518,6 @@ def patch_gow_required_env(
 
 
 def patch_gow_required_devices(block: str, extra_paths: list[str]) -> tuple[str, bool]:
-    if not extra_paths:
-        return block, False
-
     span = find_bracket_array(block, "env")
     if not span:
         return block, False
@@ -515,15 +536,27 @@ def patch_gow_required_devices(block: str, extra_paths: list[str]) -> tuple[str,
     return block[:start] + new_env + block[end:], True
 
 
+def merge_runner_mounts(
+    existing: list[tuple[str, str, str]],
+    desired: list[tuple[str, str, str]],
+) -> list[tuple[str, str, str]]:
+    cleaned = sanitize_mounts(existing)
+    if desired:
+        return merge_mounts(cleaned, desired)
+    return cleaned
+
+
 def patch_toml_block(block: str, paths: dict[str, str]) -> tuple[str, bool]:
     title_match = re.search(r'^\s*title\s*=\s*["\']([^"\']+)["\']', block, flags=re.MULTILINE)
     if not title_match:
         return block, False
 
     title = title_match.group(1)
-    desired = desired_for_title(title, paths)
-    if not desired:
+    key = preset_key(title)
+    if not key:
         return block, False
+
+    desired = desired_for_title(title, paths)
 
     mounts_span = find_bracket_array(block, "mounts")
     if not mounts_span:
@@ -531,8 +564,8 @@ def patch_toml_block(block: str, paths: dict[str, str]) -> tuple[str, bool]:
 
     start, end = mounts_span
     mounts_text = block[start:end]
-    existing = sanitize_mounts(parse_mounts_array(mounts_text))
-    merged = merge_mounts(existing, desired)
+    existing = parse_mounts_array(mounts_text)
+    merged = merge_runner_mounts(existing, desired)
     new_mounts = format_mounts_array(merged)
     new_block = block[:start] + new_mounts + block[end:]
 
@@ -585,7 +618,7 @@ def patch_runner_mounts(runner: dict, desired: list[tuple[str, str, str]]) -> tu
         parsed = parse_mount_line(str(raw))
         if parsed:
             existing.append(parsed)
-    merged = merge_mounts(sanitize_mounts(existing), desired)
+    merged = merge_runner_mounts(existing, desired)
     new_mounts = mount_strings(merged)
     changed = new_mounts != list(existing_raw)
     runner = dict(runner)
@@ -608,9 +641,9 @@ def patch_config_api(socket: Path, paths: dict[str, str]) -> int:
 
     for app in apps:
         title = app.get("title", "")
-        desired = desired_for_title(title, paths)
-        if not desired:
+        if not preset_key(title):
             continue
+        desired = desired_for_title(title, paths)
         runner = app.get("runner")
         if not runner_is_docker(runner):
             continue
@@ -680,30 +713,23 @@ def main() -> int:
             )
             working_text = patched
 
+    if not cfg_path and not args.socket:
+        parser.print_usage(file=sys.stderr)
+        return 2 if not args.wolf_socket_host else exit_code
+
     if not paths:
-        if args.socket and args.wolf_socket_host:
-            sock = Path(args.socket)
-            if sock.is_socket():
-                try:
-                    api_count = patch_wolf_ui_socket_api(sock, args.wolf_socket_host)
-                except (RuntimeError, json.JSONDecodeError, OSError) as exc:
-                    print(f"Wolf UI socket mount API warning: {exc}", file=sys.stderr)
-        if not paths and not args.wolf_socket_host:
-            print("No library paths configured; skipping mount presets")
-        elif not paths:
-            print("No library paths configured; skipping library mount presets")
-        if not cfg_path and not args.socket:
-            parser.print_usage(file=sys.stderr)
-            return 2 if not args.wolf_socket_host else exit_code
-        return exit_code
+        print("No library paths configured; sanitizing app runner mounts only")
 
     if working_text is not None:
         patched, toml_count = patch_config_toml(working_text, paths)
         if toml_count:
             cfg_path.write_text(patched, encoding="utf-8")  # type: ignore[union-attr]
-            print(f"Applied mount presets to {toml_count} app runner(s) in {cfg_path}")
+            if paths:
+                print(f"Applied mount presets to {toml_count} app runner(s) in {cfg_path}")
+            else:
+                print(f"Sanitized mounts on {toml_count} app runner(s) in {cfg_path}")
         elif not socket_count:
-            print(f"No app runners needed mount preset updates in {cfg_path}")
+            print(f"No app runners needed mount updates in {cfg_path}")
         working_text = patched
 
     if args.socket:
@@ -721,13 +747,12 @@ def main() -> int:
                 print(f"Wolf API mount preset warning: {exc}", file=sys.stderr)
             else:
                 if api_count:
-                    print(f"Applied mount presets to {api_count} Moonlight app(s) via Wolf API")
+                    if paths:
+                        print(f"Applied mount presets to {api_count} Moonlight app(s) via Wolf API")
+                    else:
+                        print(f"Sanitized mounts on {api_count} Moonlight app(s) via Wolf API")
                 elif not toml_count and not socket_count:
-                    print("No apps needed mount preset updates")
-
-    if not cfg_path and not args.socket:
-        parser.print_usage(file=sys.stderr)
-        return 2
+                    print("No apps needed mount updates")
 
     return exit_code
 

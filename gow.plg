@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "Dadud">
-<!ENTITY version   "2026.05.31k">
+<!ENTITY version   "2026.05.31l">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
@@ -24,6 +24,11 @@
 >
 
   <CHANGES><![CDATA[
+### 2026.05.31l
+- Mount presets: sanitize all app runners (drop lutris:/ and /etc/wolf/* placeholders); prune stale GOW_REQUIRED_DEVICES path tokens; resolve compose library binds to real host paths
+- Health: warn on Lutris placeholder mounts, missing Steam/Lutris/Kodi binds, stale /var/lutris/ in env
+- Add diagnose-mounts.sh (Fix mounts companion)
+
 ### 2026.05.31k
 - ES-DE launchers: fullscreen for all standalone emulators (Dolphin, Cemu, Xemu, Citron, PCSX2, Xenia, RetroArch); seed RPCS3 config.yml with Start games in fullscreen mode
 
@@ -258,6 +263,12 @@
   </FILE>
   <FILE Name="&script_dir;/diagnose-esde-launch.sh">
     <URL>&gitPkgURL;/scripts/diagnose-esde-launch.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/diagnose-mounts.sh">
+    <URL>&gitPkgURL;/scripts/diagnose-mounts.sh</URL>
+  </FILE>
+  <FILE Name="&script_dir;/diagnose-steam-lutris-launch.sh">
+    <URL>&gitPkgURL;/scripts/diagnose-steam-lutris-launch.sh</URL>
   </FILE>
   <FILE Name="&script_dir;/health-check.sh">
     <URL>&gitPkgURL;/scripts/health-check.sh</URL>

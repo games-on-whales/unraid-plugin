@@ -215,36 +215,47 @@ write_compose_memory_limits() {
 # ── Docker Compose ────────────────────────────────────────────────────────────
 
 write_library_mounts() {
+    local p
     if [[ -n "$STEAM_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/steam:rw\n' "$STEAM_LIBRARY"
+        p="$(gow_mount_source_path "$STEAM_LIBRARY")"
+        printf '      - %s:/etc/wolf/steam:rw\n' "$p"
     fi
     if [[ -n "$GAMES_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/games:rw\n' "$GAMES_LIBRARY"
+        p="$(gow_mount_source_path "$GAMES_LIBRARY")"
+        printf '      - %s:/etc/wolf/games:rw\n' "$p"
     fi
     if [[ -n "$ROMS_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/roms:rw\n' "$ROMS_LIBRARY"
+        p="$(gow_mount_source_path "$ROMS_LIBRARY")"
+        printf '      - %s:/etc/wolf/roms:rw\n' "$p"
     fi
     if [[ -n "$BIOS_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/bioses:rw\n' "$BIOS_LIBRARY"
+        p="$(gow_mount_source_path "$BIOS_LIBRARY")"
+        printf '      - %s:/etc/wolf/bioses:rw\n' "$p"
     fi
     if [[ -n "$MEDIA_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/media:rw\n' "$MEDIA_LIBRARY"
+        p="$(gow_mount_source_path "$MEDIA_LIBRARY")"
+        printf '      - %s:/etc/wolf/media:rw\n' "$p"
     fi
     if [[ -n "$LUTRIS_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/lutris:rw\n' "$LUTRIS_LIBRARY"
+        p="$(gow_mount_source_path "$LUTRIS_LIBRARY")"
+        printf '      - %s:/etc/wolf/lutris:rw\n' "$p"
     fi
     if [[ -n "$PRISM_LIBRARY" ]]; then
-        printf '      - %s:/etc/wolf/prismlauncher:rw\n' "$PRISM_LIBRARY"
+        p="$(gow_mount_source_path "$PRISM_LIBRARY")"
+        printf '      - %s:/etc/wolf/prismlauncher:rw\n' "$p"
     fi
     if [[ -n "$COMPAT_TOOLS_PATH" ]]; then
-        printf '      - %s:/etc/wolf/compatibilitytools.d:rw\n' "$COMPAT_TOOLS_PATH"
+        p="$(gow_mount_source_path "$COMPAT_TOOLS_PATH")"
+        printf '      - %s:/etc/wolf/compatibilitytools.d:rw\n' "$p"
     fi
 }
 
 write_wolf_den_compat_mount() {
     if [[ -n "$COMPAT_TOOLS_PATH" ]]; then
+        local p
+        p="$(gow_mount_source_path "$COMPAT_TOOLS_PATH")"
         cat <<YAML
-      - ${COMPAT_TOOLS_PATH}:/etc/wolf/compatibilitytools.d:rw
+      - ${p}:/etc/wolf/compatibilitytools.d:rw
 YAML
     fi
 }

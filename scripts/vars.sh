@@ -2,7 +2,7 @@
 # vars.sh — shared environment for all GoW plugin scripts
 
 export GOW_NAME="gow"
-export GOW_VERSION="2026.05.31k"
+export GOW_VERSION="2026.05.31l"
 export GOW_ORG="Dadud"
 export GOW_PLUGIN="/boot/config/plugins/gow"
 export GOW_CFG="${GOW_PLUGIN}/gow.cfg"
