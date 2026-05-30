@@ -217,6 +217,7 @@ services:
       - XDG_RUNTIME_DIR=/tmp/sockets
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+      - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
     write_wolf_network_env
     cat <<YAML
@@ -290,6 +291,7 @@ services:
       - XDG_RUNTIME_DIR=/tmp/sockets
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+      - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
     write_wolf_network_env
     cat <<YAML
