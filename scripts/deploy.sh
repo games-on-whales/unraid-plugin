@@ -364,14 +364,24 @@ detect_nvidia_version() {
     err "Cannot determine NVIDIA driver version. Is the NVIDIA driver plugin active?"
 }
 
+NV_VERSION_LABEL="org.games-on-whales.nv_version"
+
 build_nvidia_volume() {
     detect_nvidia_version
     info "NVIDIA driver version: ${NV_VERSION}"
     cleanup_nvidia_driver_containers
 
     if docker volume inspect nvidia-driver-vol &>/dev/null; then
-        info "NVIDIA driver volume already exists — skipping build"
-        return
+        local built_version
+        built_version=$(docker volume inspect nvidia-driver-vol \
+            --format "{{ index .Labels \"${NV_VERSION_LABEL}\" }}" 2>/dev/null) || true
+        if [[ "$built_version" == "$NV_VERSION" ]]; then
+            info "NVIDIA driver volume already built for ${NV_VERSION} — skipping build"
+            return
+        fi
+        info "NVIDIA driver volume was built for '${built_version:-unknown}' but host driver is ${NV_VERSION} — rebuilding"
+        docker volume rm nvidia-driver-vol >/dev/null 2>&1 \
+            || err "Failed to remove stale nvidia-driver-vol. Stop containers using it and retry."
     fi
 
     info "Building NVIDIA driver volume — this may take several minutes..."
@@ -379,6 +389,10 @@ build_nvidia_volume() {
         "https://raw.githubusercontent.com/games-on-whales/gow/master/images/nvidia-driver/Dockerfile" \
         | docker build -t gow/nvidia-driver:latest -f - \
             --build-arg NV_VERSION="${NV_VERSION}" .
+
+    docker volume create \
+        --label "${NV_VERSION_LABEL}=${NV_VERSION}" \
+        nvidia-driver-vol >/dev/null
 
     local cid
     cid=$(docker create \
