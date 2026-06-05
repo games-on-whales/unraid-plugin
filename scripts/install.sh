@@ -80,6 +80,13 @@ EOF
 }
 
 install_settings_ui() {
+    # gow.plg installs the settings-ui package (which now also carries the
+    # helper scripts) before this runs, so normally it is already in place.
+    # Install defensively only if it is missing, e.g. when run standalone.
+    if [[ -f "${GOW_EMHTTP}/gow.page" ]]; then
+        info "settings-ui package already installed"
+        return
+    fi
     local pkg
     pkg=$(ls "${GOW_PACKAGE_DIR}"/settings-ui-*.txz 2>/dev/null | tail -1)
     [[ -n "$pkg" ]] || err "settings-ui package not found in ${GOW_PACKAGE_DIR}"
