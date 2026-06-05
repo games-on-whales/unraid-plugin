@@ -473,6 +473,8 @@ EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+info "GoW plugin ${GOW_VERSION}"
+
 validate_network_config
 
 # Stop existing stack on reconfigure

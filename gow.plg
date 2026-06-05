@@ -5,7 +5,6 @@
 <!ENTITY org       "games-on-whales">
 <!ENTITY version   "2026.06.05">
 <!ENTITY launch    "Settings/gow">
-<!ENTITY gitPkgURL "https://raw.githubusercontent.com/&org;/unraid-plugin/&version;">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
 <!ENTITY pluginURL "https://github.com/&org;/unraid-plugin/releases/latest/download/&name;.plg">
 <!ENTITY plugin    "/boot/config/plugins/&name;">
@@ -121,35 +120,13 @@
     </INLINE>
   </FILE>
 
-  <!-- Scripts: downloaded from the tagged release so hashes match exactly.
-       During development, point gitPkgURL at your local HTTP server (see DEVELOPING.md). -->
-
-  <FILE Name="&script_dir;/vars.sh">
-    <URL>&gitPkgURL;/scripts/vars.sh</URL>
-  </FILE>
-
-  <FILE Name="&script_dir;/preinstall.sh">
-    <URL>&gitPkgURL;/scripts/preinstall.sh</URL>
-  </FILE>
-
-  <FILE Name="&script_dir;/install.sh">
-    <URL>&gitPkgURL;/scripts/install.sh</URL>
-  </FILE>
-
-  <FILE Name="&script_dir;/deploy.sh">
-    <URL>&gitPkgURL;/scripts/deploy.sh</URL>
-  </FILE>
-
-  <FILE Name="&script_dir;/uninstall.sh">
-    <URL>&gitPkgURL;/scripts/uninstall.sh</URL>
-  </FILE>
-
-  <FILE Name="&script_dir;/update.sh">
-    <URL>&gitPkgURL;/scripts/update.sh</URL>
-  </FILE>
-
   <!-- Settings UI package (built from packages/settings-ui, see DEVELOPING.md).
-       SHA256/MD5 are filled in by the release workflow after building the txz. -->
+       This is the ONLY downloaded artifact: its filename is version-stamped, so
+       Unraid always fetches a fresh copy on update. The helper scripts
+       (deploy.sh, install.sh, …) are bundled inside it and installed to
+       &script_dir; by installpkg below. Earlier versions downloaded the scripts
+       as separate constant-path <FILE> entries, which Unraid cached and never
+       refreshed on update — users kept running a stale deploy.sh. -->
   <FILE Name="&plugin;/packages/settings-ui-&version;.txz">
     <URL>&gitReleaseURL;/settings-ui.txz</URL>
   </FILE>
@@ -157,11 +134,14 @@
   <!-- Install -->
   <FILE Run="/bin/bash">
     <INLINE>
-      chmod +x &script_dir;/*.sh
-
       echo "╔══════════════════════════╗"
       echo "║  Installing GoW Plugin   ║"
       echo "╚══════════════════════════╝"
+
+      # Lay down the settings UI page and the helper scripts (both shipped in the
+      # versioned package) before running them, so they match this exact version.
+      /sbin/installpkg &plugin;/packages/settings-ui-&version;.txz
+      chmod +x &script_dir;/*.sh
 
       if ! bash &script_dir;/preinstall.sh; then
         echo "Preconditions not met; aborting installation"

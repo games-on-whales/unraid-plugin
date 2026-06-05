@@ -79,6 +79,15 @@ jobs:
             git push origin "$VERSION"
           fi
 
+      - name: Stage helper scripts into the package
+        run: |
+          # Bundle the scripts inside the versioned .txz so they refresh on every
+          # plugin update (a constant-path <FILE> download would be cached stale).
+          dest=packages/settings-ui/root/boot/config/plugins/gow/scripts
+          mkdir -p "$dest"
+          cp scripts/*.sh "$dest/"
+          chmod +x "$dest"/*.sh
+
       - name: Build settings-ui package
         run: |
           chmod +x utils/fmakepkg.sh
