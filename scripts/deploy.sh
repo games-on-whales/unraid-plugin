@@ -218,6 +218,7 @@ services:
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
+      - WOLF_PULSE_CONTAINER_TIMEOUT_MS=30000
 YAML
     write_wolf_network_env
     cat <<YAML
@@ -292,6 +293,7 @@ services:
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
+      - WOLF_PULSE_CONTAINER_TIMEOUT_MS=30000
 YAML
     write_wolf_network_env
     cat <<YAML
