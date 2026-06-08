@@ -18,7 +18,9 @@ fi
 COMPOSE_FILE="${APPDATA}/docker-compose.yml"
 if [[ -f "$COMPOSE_FILE" ]]; then
     info "Stopping Wolf + Wolf Den"
-    docker compose -f "$COMPOSE_FILE" down 2>/dev/null || warn "Could not stop containers cleanly"
+    # down -v also drops the non-external wolf-socket runtime volume; the
+    # external nvidia-driver-vol is left untouched.
+    docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || warn "Could not stop containers cleanly"
 fi
 
 if docker inspect WolfPulseAudio &>/dev/null; then

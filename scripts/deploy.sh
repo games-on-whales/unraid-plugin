@@ -218,7 +218,6 @@ services:
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
-      - WOLF_PULSE_CONTAINER_TIMEOUT_MS=30000
 YAML
     write_wolf_network_env
     cat <<YAML
@@ -293,7 +292,6 @@ services:
       - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
-      - WOLF_PULSE_CONTAINER_TIMEOUT_MS=30000
 YAML
     write_wolf_network_env
     cat <<YAML
@@ -482,7 +480,14 @@ validate_network_config
 # Stop existing stack on reconfigure
 if [[ -f "$COMPOSE_FILE" ]]; then
     info "Stopping existing stack for reconfiguration"
-    docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+    # down -v drops the non-external wolf-socket volume so it is recreated
+    # root-owned. Wolf now runs PulseAudio inside its own container (as root),
+    # and the old WolfPulseAudio sidecar left /tmp/sockets owned by the run uid
+    # (1000), which makes the embedded PulseAudio refuse to start with
+    # "XDG_RUNTIME_DIR is not owned by us". The external nvidia-driver-vol is
+    # never removed by down -v. wolf-socket only holds runtime sockets, so
+    # recreating it is safe.
+    docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
     cleanup_wolf_runtime_containers
 fi
 

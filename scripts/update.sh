@@ -18,7 +18,15 @@ COMPOSE_FILE="${APPDATA}/docker-compose.yml"
 info "Pulling latest Wolf + Wolf Den images..."
 docker compose -f "$COMPOSE_FILE" pull
 
+# Recreate the stack with a fresh wolf-socket volume. Wolf now runs PulseAudio
+# inside its own container as root; the old WolfPulseAudio sidecar left
+# /tmp/sockets owned by the run uid (1000), which makes the embedded PulseAudio
+# refuse to start with "XDG_RUNTIME_DIR is not owned by us". down -v drops the
+# non-external wolf-socket volume (runtime sockets only) so it comes back
+# root-owned; the external nvidia-driver-vol is left untouched.
 info "Restarting stack..."
+docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
+docker rm -f WolfPulseAudio >/dev/null 2>&1 || true
 docker compose -f "$COMPOSE_FILE" up -d
 
 info "Update complete."
