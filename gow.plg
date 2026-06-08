@@ -23,6 +23,11 @@
 >
 
   <CHANGES>
+### 2026.06.08
+- Match Wolf's new embedded PulseAudio: Wolf now runs PulseAudio inside its own container instead of the separate WolfPulseAudio sidecar
+- Recreate the `wolf-socket` runtime volume on deploy, update, and uninstall so the embedded PulseAudio (running as root) gets a `/tmp/sockets` it owns, fixing the "XDG_RUNTIME_DIR is not owned by us" PulseAudio start failures seen after upgrading from the sidecar
+- Drop the now-unused `WOLF_PULSE_CONTAINER_TIMEOUT_MS` setting, since Wolf waits for the PulseAudio socket directly instead of sleeping for a fixed timeout
+
 ### 2026.05.30
 - Set `HOST_APPS_STATE_FOLDER` to the selected appdata path so Wolf bind-mounts spawned app containers from the chosen appdata directory instead of host `/etc/wolf`
 - Fix the Wolf Den port not changing: publish the configured host port to the container's port `8080` instead of putting Wolf Den on host networking, which ignored the setting and left it on `8080`
