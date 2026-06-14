@@ -347,6 +347,26 @@ write_compose() {
 
 # ── NVIDIA driver volume ──────────────────────────────────────────────────────
 
+# Wolf composes the game stream through a Wayland compositor. On NVIDIA this
+# requires the nvidia_drm kernel module loaded with modeset=1; without it Wolf's
+# EGL renderer cannot enumerate the GPU, falls back to Mesa/ZINK, and panics with
+# "eglQueryDevicesEXT EGL_BAD_ALLOC" / "Failed to create EGLDisplay", so Moonlight
+# shows no video. The settings page warns about this too, but surface it here as
+# well since the deploy log is what the user watches during Install. See
+# docs/FAQ.md. Non-fatal: the volume still builds so the fix can be applied after.
+warn_if_nvidia_modeset_off() {
+    local path="/sys/module/nvidia_drm/parameters/modeset"
+    local modeset=""
+    [[ -r "$path" ]] && modeset="$(tr -d '[:space:]' < "$path" 2>/dev/null)" || true
+    [[ "$modeset" == "Y" ]] && return 0
+
+    warn "NVIDIA nvidia_drm.modeset is not enabled (found '${modeset:-unset}')."
+    warn "Wolf's Wayland compositor will fail and Moonlight will show no video"
+    warn "(EGL 'Failed to create EGLDisplay' / EGL_BAD_ALLOC in the Wolf log)."
+    warn "Fix: Tools > System Drivers > nvidia_drm, set the Modprobe.d Config File"
+    warn "to 'options nvidia_drm modeset=1', apply, and reboot. See docs/FAQ.md."
+}
+
 detect_nvidia_version() {
     NV_VERSION=$(cat /sys/module/nvidia/version 2>/dev/null) || true
     [[ -n "${NV_VERSION:-}" ]] && return
@@ -498,6 +518,7 @@ ensure_wolf_uuid
 write_compose
 
 if [[ "$GPU_VENDOR" == "NVIDIA" ]]; then
+    warn_if_nvidia_modeset_off
     build_nvidia_volume
 fi
 

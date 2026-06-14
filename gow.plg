@@ -23,6 +23,10 @@
 >
 
   <CHANGES>
+### 2026.06.14
+- Warn in the deploy log when an NVIDIA GPU is selected but `nvidia_drm modeset` is off, the most common cause of "No video received" / EGL `BAD_ALLOC` crashes in Wolf
+- Document the exact EGL error signature and the multi-GPU render-node case in the FAQ
+
 ### 2026.06.08
 - Match Wolf's new embedded PulseAudio: Wolf now runs PulseAudio inside its own container instead of the separate WolfPulseAudio sidecar
 - Recreate the `wolf-socket` runtime volume on deploy, update, and uninstall so the embedded PulseAudio (running as root) gets a `/tmp/sockets` it owns, fixing the "XDG_RUNTIME_DIR is not owned by us" PulseAudio start failures seen after upgrading from the sidecar

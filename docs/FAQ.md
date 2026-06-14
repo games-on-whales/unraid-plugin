@@ -7,6 +7,28 @@ NVIDIA hardware requires the `nvidia_drm` kernel module to load with
 `modeset=1`. Without it, Wolf either fails to start the compositor or the
 remote client shows a black frame.
 
+### Symptoms
+
+Moonlight connects but shows **"No video received from host"** (or a black
+screen), and the Wolf container log shows the EGL renderer failing to find the
+NVIDIA GPU, falling back to Mesa/ZINK, then panicking:
+
+```text
+ERROR smithay::backend::egl::ffi: [EGL] 0x3003 (BAD_ALLOC) eglQueryDevicesEXT: EGL_BAD_ALLOC error: In eglQueryDevicesEXT: Failed to allocate device list.
+libEGL warning: egl: failed to create dri2 screen
+MESA: error: ZINK: failed to choose pdev
+panicked at wayland-display-core/...: Failed to create EGLDisplay: InitFailed(Unknown(0))
+```
+
+The most common cause is `nvidia_drm modeset` being off — apply the fix below
+and reboot.
+
+> **Multiple NVIDIA GPUs?** This same EGL failure also appears when the selected
+> render node (`WOLF_RENDER_NODE`, set from the GPU you pick on the settings
+> page) points at a card that is not the one driving the display. If modeset is
+> already `Y`, reconfigure in Settings > Games on Whales and select the other
+> NVIDIA render node (`/dev/dri/renderD129`, etc.).
+
 ### Check
 
 ```bash
