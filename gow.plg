@@ -23,6 +23,9 @@
 >
 
   <CHANGES>
+### 2026.06.14
+- Fix Wolf config and Moonlight pairing being lost on every container restart: Wolf's `startup.sh` derives its config path from `HOST_APPS_STATE_FOLDER`, so with appdata mounted at `/etc/wolf` it wrote config/pairing to an unmounted (ephemeral) path and lost it on restart. Mount appdata at the same path inside the container as on the host (identity mount) so Wolf's config, pairing, and spawned app state all persist
+
 ### 2026.06.08
 - Match Wolf's new embedded PulseAudio: Wolf now runs PulseAudio inside its own container instead of the separate WolfPulseAudio sidecar
 - Recreate the `wolf-socket` runtime volume on deploy, update, and uninstall so the embedded PulseAudio (running as root) gets a `/tmp/sockets` it owns, fixing the "XDG_RUNTIME_DIR is not owned by us" PulseAudio start failures seen after upgrading from the sidecar

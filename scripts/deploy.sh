@@ -215,14 +215,19 @@ services:
       - WOLF_RENDER_NODE=${RENDER_NODE}
       - NVIDIA_DRIVER_VOLUME_NAME=nvidia-driver-vol
       - XDG_RUNTIME_DIR=/tmp/sockets
-      - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
+      - WOLF_CFG_FILE=${APPDATA}/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
     write_wolf_network_env
     cat <<YAML
     volumes:
-      - ${APPDATA}:/etc/wolf:rw
+      # Identity mount (host path == container path): Wolf's startup.sh derives
+      # WOLF_CFG_FILE and the per-app state folder from HOST_APPS_STATE_FOLDER and
+      # bind-mounts that host path into the app containers it spawns. The appdata
+      # must be reachable at the same path inside this container, otherwise Wolf
+      # writes config/pairing to an unmounted (ephemeral) dir and loses it on restart.
+      - ${APPDATA}:${APPDATA}:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /dev/:/dev/:rw
       - /run/udev:/run/udev:rw
@@ -289,14 +294,19 @@ services:
     environment:
       - WOLF_RENDER_NODE=${RENDER_NODE}
       - XDG_RUNTIME_DIR=/tmp/sockets
-      - WOLF_CFG_FILE=/etc/wolf/cfg/config.toml
+      - WOLF_CFG_FILE=${APPDATA}/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
     write_wolf_network_env
     cat <<YAML
     volumes:
-      - ${APPDATA}:/etc/wolf:rw
+      # Identity mount (host path == container path): Wolf's startup.sh derives
+      # WOLF_CFG_FILE and the per-app state folder from HOST_APPS_STATE_FOLDER and
+      # bind-mounts that host path into the app containers it spawns. The appdata
+      # must be reachable at the same path inside this container, otherwise Wolf
+      # writes config/pairing to an unmounted (ephemeral) dir and loses it on restart.
+      - ${APPDATA}:${APPDATA}:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /dev/:/dev/:rw
       - /run/udev:/run/udev:rw
