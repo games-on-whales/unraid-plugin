@@ -260,7 +260,10 @@ YAML
     image: ghcr.io/games-on-whales/wolf-den:stable
     container_name: wolf-den
     environment:
-      - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
+      # The unix:// scheme is required: Wolf Den's .NET bindings only dial the
+      # UNIX socket when the path carries it, otherwise they fall back to the
+      # HTTP base address (http://localhost:80) and every API/SSE call is refused.
+      - WOLF_SOCKET_PATH=unix:///tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
     volumes:
@@ -339,7 +342,10 @@ YAML
     image: ghcr.io/games-on-whales/wolf-den:stable
     container_name: wolf-den
     environment:
-      - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
+      # The unix:// scheme is required: Wolf Den's .NET bindings only dial the
+      # UNIX socket when the path carries it, otherwise they fall back to the
+      # HTTP base address (http://localhost:80) and every API/SSE call is refused.
+      - WOLF_SOCKET_PATH=unix:///tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
     volumes:
