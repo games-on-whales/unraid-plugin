@@ -41,6 +41,38 @@ inside the Modprobe.d Config File editor.
 - Short summary: "for Wayland support, you need to set `nvidia_drm` modeset
   in Tools > System Drivers for your driver, then restart."
 
+## NVIDIA stream disconnects with "no video received" (zero-copy)
+
+Wolf uses a zero-copy NVIDIA pipeline that keeps frames in GPU (CUDA) memory for
+the lowest latency. On some newer NVIDIA driver branches this pipeline fails to
+negotiate, so Moonlight connects, shows the desktop for a few seconds, then
+disconnects with **"no video received from host"**. The built-in "Pong" test app
+(which does not exercise the same scaling path) may still work.
+
+### Check
+
+Look in the Wolf container log for a GStreamer negotiation failure right before
+the stream ends, for example:
+
+```text
+cudaconvertscale ... transform could not transform video/x-raw(memory:CUDAMemory) ...
+Internal data stream error.
+streaming stopped, reason not-negotiated (-4)
+[GSTREAMER] Pipeline error: Internal data stream error.
+```
+
+### Fix
+
+Turn off the zero-copy pipeline so Wolf falls back to its legacy pipeline:
+
+1. Open **Settings > Games on Whales** and click **Reconfigure**.
+2. Uncheck **NVIDIA zero-copy pipeline**.
+3. Click **Install** to re-deploy.
+
+This sets `WOLF_USE_ZERO_COPY=FALSE` on the Wolf container. It trades a little
+latency for a stream that negotiates correctly. Leave the option enabled if your
+driver works with it — zero-copy is the faster path.
+
 ## Moonlight discovery and mDNS/Avahi warnings
 
 Wolf advertises the Moonlight service with mDNS on UDP port 5353. Unraid also

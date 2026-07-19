@@ -23,6 +23,9 @@
 >
 
   <CHANGES>
+### 2026.07.19
+- Add an "NVIDIA zero-copy pipeline" toggle to the setup form. Wolf's zero-copy NVIDIA pipeline fails to negotiate CUDA memory on some newer driver branches, so Moonlight connects and then disconnects with "no video received" a few seconds later (GStreamer `cudaconvertscale` "not-negotiated"). Unchecking the option sets `WOLF_USE_ZERO_COPY=FALSE` so Wolf uses its legacy pipeline; see the new FAQ entry
+
 ### 2026.06.14
 - Fix Wolf config and Moonlight pairing being lost on every container restart: Wolf's `startup.sh` derives its config path from `HOST_APPS_STATE_FOLDER`, so with appdata mounted at `/etc/wolf` it wrote config/pairing to an unmounted (ephemeral) path and lost it on restart. Mount appdata at the same path inside the container as on the host (identity mount) so Wolf's config, pairing, and spawned app state all persist
 
