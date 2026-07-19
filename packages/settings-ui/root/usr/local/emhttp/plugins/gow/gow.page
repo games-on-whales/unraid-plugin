@@ -21,6 +21,7 @@ function load_cfg() {
         'WOLF_NETWORK_MODE' => 'host',
         'WOLF_NETWORK_NAME' => '',
         'WOLF_NETWORK_IPV4' => '',
+        'WOLF_ZERO_COPY' => 'true',
         'DEPLOYED'    => 'false',
     ];
     if (!file_exists(GOW_CFG)) return $cfg;
@@ -172,6 +173,7 @@ function has_mdns_conflict() {
 
 define('FAQ_MODESET_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-wayland-support-nvidia_drmmodeset');
 define('FAQ_MDNS_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#moonlight-discovery-and-mdnsavahi-warnings');
+define('FAQ_ZERO_COPY_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-stream-disconnects-with-no-video-received-zero-copy');
 define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 
 // ── Action handlers ───────────────────────────────────────────────────────────
@@ -192,6 +194,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cfg['WOLF_NETWORK_MODE'] = $_POST['wolf_network_mode'] ?? 'host';
         $cfg['WOLF_NETWORK_NAME'] = trim($_POST['wolf_network_name'] ?? '');
         $cfg['WOLF_NETWORK_IPV4'] = trim($_POST['wolf_network_ipv4'] ?? '');
+        // Unchecked checkboxes are absent from POST — treat missing as disabled.
+        $cfg['WOLF_ZERO_COPY'] = isset($_POST['wolf_zero_copy']) ? 'true' : 'false';
 
         // Look up vendor/name/driver from the selected node
         $gpus = detect_gpus();
@@ -289,6 +293,7 @@ $pairing_url     = $wolf_den_url ? $wolf_den_url . WOLF_DEN_PAIRING_PATH : '';
 $wolf_network_mode = valid_network_mode($cfg['WOLF_NETWORK_MODE']) ? $cfg['WOLF_NETWORK_MODE'] : 'host';
 $wolf_network_name = $cfg['WOLF_NETWORK_NAME'];
 $wolf_network_ipv4 = $cfg['WOLF_NETWORK_IPV4'];
+$wolf_zero_copy    = ($cfg['WOLF_ZERO_COPY'] !== 'false');
 $moonlight_host    = ($wolf_network_mode === 'custom' && valid_ipv4($wolf_network_ipv4)) ? $wolf_network_ipv4 : $ip;
 $mdns_conflict   = $deployed && has_mdns_conflict();
 ?>
@@ -575,6 +580,21 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
       apply, and reboot before installing.
       <a href="<?= FAQ_MODESET_URL ?>" target="_blank" class="gow-msg-link">Details</a>.
     </p>
+    <?php endif; ?>
+
+    <?php if ($has_nvidia): ?>
+    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
+      <label class="gow-label" for="wolf_zero_copy">
+        <input type="checkbox" name="wolf_zero_copy" id="wolf_zero_copy" value="1"
+               <?= $wolf_zero_copy ? 'checked' : '' ?>>
+        NVIDIA zero-copy pipeline
+      </label>
+      <p class="gow-help">Leave enabled for best performance. If streams disconnect
+         a few seconds after connecting with a "no video received" error (common on
+         some newer NVIDIA driver branches), uncheck this to use Wolf's legacy
+         pipeline, then re-install.
+         <a href="<?= FAQ_ZERO_COPY_URL ?>" target="_blank" class="gow-msg-link">Details</a>.</p>
+    </div>
     <?php endif; ?>
 
     <div class="gow-actions" style="margin-top:16px">

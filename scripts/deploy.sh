@@ -23,6 +23,7 @@ WOLF_DEN_PORT="${WOLF_DEN_PORT:-8080}"
 WOLF_NETWORK_MODE="${WOLF_NETWORK_MODE:-host}"
 WOLF_NETWORK_NAME="${WOLF_NETWORK_NAME:-}"
 WOLF_NETWORK_IPV4="${WOLF_NETWORK_IPV4:-}"
+WOLF_ZERO_COPY="${WOLF_ZERO_COPY:-true}"
 [[ -n "${RENDER_NODE:-}" ]] || err "No GPU configured. Select a GPU in Settings > Games on Whales."
 [[ -n "${GPU_VENDOR:-}"  ]] || err "GPU vendor not set. Re-run setup in Settings > Games on Whales."
 if [[ ! "$WOLF_DEN_PORT" =~ ^[0-9]+$ ]] || (( WOLF_DEN_PORT < 1 || WOLF_DEN_PORT > 65535 )); then
@@ -219,6 +220,14 @@ services:
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
+    # Wolf's zero-copy NVIDIA pipeline fails to negotiate CUDA memory on some
+    # newer driver branches (cudaconvertscale "not-negotiated", stream dies a
+    # few seconds after connecting). Setting WOLF_USE_ZERO_COPY=FALSE makes Wolf
+    # fall back to the legacy pipeline, which trades a little latency for working
+    # video. See docs/FAQ.md.
+    if [[ "${WOLF_ZERO_COPY,,}" == "false" ]]; then
+        echo "      - WOLF_USE_ZERO_COPY=FALSE"
+    fi
     write_wolf_network_env
     cat <<YAML
     volumes:
