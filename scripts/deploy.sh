@@ -260,10 +260,13 @@ YAML
     image: ghcr.io/games-on-whales/wolf-den:stable
     container_name: wolf-den
     environment:
-      # The unix:// scheme is required: Wolf Den's .NET bindings only dial the
-      # UNIX socket when the path carries it, otherwise they fall back to the
-      # HTTP base address (http://localhost:80) and every API/SSE call is refused.
-      - WOLF_SOCKET_PATH=unix:///tmp/sockets/wolf.sock
+      # Plain filesystem path, NOT a unix:// URL: wolf-den's entrypoint feeds
+      # this straight to `socat ... UNIX-CONNECT:${WOLF_SOCKET_PATH}` to build a
+      # uid-1000-owned proxy at /app/wolf.sock, then re-exports the unix:// form
+      # itself for the .NET client. A unix:// prefix here makes socat treat it as
+      # a literal filename, silently (2>/dev/null) fail to create the proxy, and
+      # the socket-wait times out forever.
+      - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
     volumes:
@@ -342,10 +345,13 @@ YAML
     image: ghcr.io/games-on-whales/wolf-den:stable
     container_name: wolf-den
     environment:
-      # The unix:// scheme is required: Wolf Den's .NET bindings only dial the
-      # UNIX socket when the path carries it, otherwise they fall back to the
-      # HTTP base address (http://localhost:80) and every API/SSE call is refused.
-      - WOLF_SOCKET_PATH=unix:///tmp/sockets/wolf.sock
+      # Plain filesystem path, NOT a unix:// URL: wolf-den's entrypoint feeds
+      # this straight to `socat ... UNIX-CONNECT:${WOLF_SOCKET_PATH}` to build a
+      # uid-1000-owned proxy at /app/wolf.sock, then re-exports the unix:// form
+      # itself for the .NET client. A unix:// prefix here makes socat treat it as
+      # a literal filename, silently (2>/dev/null) fail to create the proxy, and
+      # the socket-wait times out forever.
+      - WOLF_SOCKET_PATH=/tmp/sockets/wolf.sock
       - WOLF_SOCKET_TIMEOUT=60
       - XDG_DATA_HOME=/app/wolf-den
     volumes:
