@@ -217,6 +217,8 @@ services:
       - XDG_RUNTIME_DIR=/tmp/sockets
       - WOLF_CFG_FILE=${APPDATA}/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+      - WOLF_DEFAULT_RUN_UID=99
+      - WOLF_DEFAULT_RUN_GID=100
       - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
     write_wolf_network_env
@@ -296,6 +298,8 @@ services:
       - XDG_RUNTIME_DIR=/tmp/sockets
       - WOLF_CFG_FILE=${APPDATA}/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
+      - WOLF_DEFAULT_RUN_UID=99
+      - WOLF_DEFAULT_RUN_GID=100
       - HOST_APPS_STATE_FOLDER=${APPDATA}
 YAML
     write_wolf_network_env
