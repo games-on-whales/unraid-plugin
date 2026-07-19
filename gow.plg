@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.06.14">
+<!ENTITY version   "2026.07.19">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
 <!ENTITY pluginURL "https://github.com/&org;/unraid-plugin/releases/latest/download/&name;.plg">
