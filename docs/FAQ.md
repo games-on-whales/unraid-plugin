@@ -73,6 +73,44 @@ This sets `WOLF_USE_ZERO_COPY=FALSE` on the Wolf container. It trades a little
 latency for a stream that negotiates correctly. Leave the option enabled if your
 driver works with it — zero-copy is the faster path.
 
+## Apps never start after updating (app state owned by the wrong user)
+
+Wolf runs the apps it launches as a fixed UID/GID and bind-mounts
+`<appdata>/profile-data/<profile>/<app>` in as the app's home directory. The
+plugin sets that to Unraid's `nobody:users` (99:100). Neither Wolf nor the app
+images re-own state that is already on disk, so app data written under a
+different UID — anything created before plugin 2026.07.19 — stays unwritable and
+the app dies during startup. Steam is the usual casualty: the container comes up,
+the desktop and taskbar appear, but Big Picture never opens.
+
+### Check
+
+In the app container's log, the startup gets as far as the runtime and then
+stops, with no window ever appearing:
+
+```text
+Setting default user uid=99(retro) gid=100(retro)
+steam.sh[226]: Running Steam on ubuntu 25.04 64-bit
+setup.sh[317]: Steam runtime environment up-to-date!
+```
+
+Confirm the mismatch from the Unraid terminal — anything not owned by `99 100`
+under `profile-data` is the problem:
+
+```bash
+find /mnt/user/appdata/gow/profile-data -maxdepth 4 ! -user 99 -printf '%u %p\n' | head
+```
+
+### Fix
+
+Open **Settings > Games on Whales** and click **Install** to re-deploy. The
+deploy script re-owns everything under `profile-data` as 99:100 and updates the
+UID/GID saved for already-paired Moonlight clients.
+
+The first re-deploy after updating walks the whole tree, so it can take a while
+if the Steam library is large. It is recorded in `<appdata>/cfg/.run-ids` and
+skipped on later deploys.
+
 ## Moonlight discovery and mDNS/Avahi warnings
 
 Wolf advertises the Moonlight service with mDNS on UDP port 5353. Unraid also
