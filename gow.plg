@@ -23,6 +23,10 @@
 >
 
   <CHANGES>
+### 2026.08.09
+- Fix gamepad input leaking out of the streamed session (kicked back to Wolf UI, another app container launching, host desktop reacting): the plugin's hand-written udev rules matched device names Wolf no longer uses and never stripped the `uaccess` ACL. Deploy now installs Wolf's own `85-wolf.rules` (games-on-whales/wolf#455), fetched from upstream at deploy time with a bundled fallback when the host is offline
+- Install the rules as `/etc/udev/rules.d/85-wolf.rules`, the path Wolf's `scripts/wolf-input-diag.sh` checks, and remove the superseded `85-gow-virtual-inputs.rules` from both `/etc/udev/rules.d` and the flash drive
+
 ### 2026.07.19
 - Add an "NVIDIA zero-copy pipeline" toggle to the setup form. Wolf's zero-copy NVIDIA pipeline fails to negotiate CUDA memory on some newer driver branches, so Moonlight connects and then disconnects with "no video received" a few seconds later (GStreamer `cudaconvertscale` "not-negotiated"). Unchecking the option sets `WOLF_USE_ZERO_COPY=FALSE` so Wolf uses its legacy pipeline; see the new FAQ entry
 

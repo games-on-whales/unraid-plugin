@@ -49,8 +49,11 @@ remove_go_block() {
 remove_go_block "# GoW udev rules"
 remove_go_block "# GoW docker-compose"
 
-# Remove udev rules
+# Remove udev rules — current filenames plus the pre-wolf#455 ones, which
+# older installs may still have on the flash drive.
 info "Removing udev rules"
+rm -f "/etc/udev/rules.d/85-wolf.rules"
+rm -f "/boot/config/gow-85-wolf.rules"
 rm -f "/etc/udev/rules.d/85-gow-virtual-inputs.rules"
 rm -f "/boot/config/gow-virtual-inputs.rules"
 udevadm control --reload-rules 2>/dev/null || true
