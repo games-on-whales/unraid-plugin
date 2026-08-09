@@ -1,5 +1,18 @@
 # FAQ
 
+## Start here: Diagnostics
+
+**Settings > Games on Whales > Diagnostics** prints a read-only report — the
+configured run UID/GID, the UID saved for already-paired clients, ownership of
+the app state folders, whether Wolf's `fake-udev` helper can run, the installed
+udev rules, and the ownership of Wolf's runtime socket volume. It changes
+nothing and is safe to run while streaming.
+
+Every check that fails is printed with what it breaks and how to fix it. Include
+the output when reporting an issue; it answers most of the questions below
+without a round trip. From a terminal it is
+`bash /boot/config/plugins/gow/scripts/diagnose.sh`.
+
 ## NVIDIA Wayland support (nvidia_drm.modeset)
 
 Wolf composes its game stream through a Wayland compositor, and Wayland on
@@ -77,11 +90,12 @@ driver works with it — zero-copy is the faster path.
 
 Wolf runs the apps it launches as a fixed UID/GID and bind-mounts
 `<appdata>/profile-data/<profile>/<app>` in as the app's home directory. The
-plugin sets that to Unraid's `nobody:users` (99:100). Neither Wolf nor the app
-images re-own state that is already on disk, so app data written under a
-different UID — anything created before plugin 2026.07.19 — stays unwritable and
-the app dies during startup. Steam is the usual casualty: the container comes up,
-the desktop and taskbar appear, but Big Picture never opens.
+plugin defaults that to Unraid's `nobody:users` (99:100) and you can change it
+under **App run UID / GID** in the setup form. Neither Wolf nor the app images
+re-own state that is already on disk, so app data written under a different UID —
+anything created before plugin 2026.07.19 — stays unwritable and the app dies
+during startup. Steam is the usual casualty: the container comes up, the desktop
+and taskbar appear, but Big Picture never opens.
 
 ### Check
 
@@ -94,8 +108,8 @@ steam.sh[226]: Running Steam on ubuntu 25.04 64-bit
 setup.sh[317]: Steam runtime environment up-to-date!
 ```
 
-Confirm the mismatch from the Unraid terminal — anything not owned by `99 100`
-under `profile-data` is the problem:
+Confirm the mismatch from the Unraid terminal — anything not owned by the
+configured run UID (99 by default) under the app state folder is the problem:
 
 ```bash
 find /mnt/user/appdata/gow/profile-data -maxdepth 4 ! -user 99 -printf '%u %p\n' | head
@@ -103,13 +117,48 @@ find /mnt/user/appdata/gow/profile-data -maxdepth 4 ! -user 99 -printf '%u %p\n'
 
 ### Fix
 
-Open **Settings > Games on Whales** and click **Install** to re-deploy. The
-deploy script re-owns everything under `profile-data` as 99:100 and updates the
+Open **Settings > Games on Whales** and click either **Install** or **Update
+Images**. Both re-own the app state to the configured UID/GID and update the
 UID/GID saved for already-paired Moonlight clients.
 
-The first re-deploy after updating walks the whole tree, so it can take a while
-if the Steam library is large. It is recorded in `<appdata>/cfg/.run-ids` and
-skipped on later deploys.
+The first run after changing the UID/GID walks the whole tree, so it can take a
+while if the Steam library is large. The result is recorded in
+`<appdata>/cfg/.run-ids` and skipped afterwards — but the tree is spot-checked
+each time, so a stamp can never mask state that has drifted back.
+
+If your app data was written by Wolf's own default user and you would rather
+keep it that way, set **App run UID / GID** to `1000:1000` in the setup form
+instead; the same migration then re-owns everything to that pair.
+
+## Controllers never appear inside an app (fake-udev)
+
+Wolf hot-plugs your controller into the running app container by copying a
+helper called `fake-udev` into the appdata folder, bind-mounting it into the
+container as `/usr/bin/fake-udev`, and executing it there. If that helper cannot
+be executed, the app sees no input devices — sway logs
+`Path '/dev/input/*' is not present.` and the controller does nothing.
+
+### Check
+
+Wolf's own log shows the exec failing with status 126:
+
+```text
+WARN | Docker exec failed (126), /bin/bash: line 1: /usr/bin/fake-udev: Permission denied
+```
+
+**Diagnostics** reports the same thing under *Controller hot-plug (fake-udev)*.
+
+### Fix
+
+Two causes, both reported by Diagnostics:
+
+- **The helper lost its executable bit.** Wolf refreshes it with `cp`, which
+  keeps the mode of an existing file, so a copy that once landed without `+x`
+  stays broken. Re-deploy (**Install** or **Update Images**) — the plugin now
+  restores the bit before starting Wolf.
+- **Appdata is on a `noexec` mount.** Nothing can execute from there, so no
+  chmod helps. This shows up on some Unassigned Devices shares. Move appdata to
+  a share mounted without `noexec`, or remount it.
 
 ## Moonlight discovery and mDNS/Avahi warnings
 

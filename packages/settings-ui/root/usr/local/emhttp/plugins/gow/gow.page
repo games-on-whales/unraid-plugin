@@ -22,6 +22,9 @@ function load_cfg() {
         'WOLF_NETWORK_NAME' => '',
         'WOLF_NETWORK_IPV4' => '',
         'WOLF_ZERO_COPY' => 'true',
+        // Unraid's nobody:users, which is what owns appdata.
+        'WOLF_RUN_UID' => '99',
+        'WOLF_RUN_GID' => '100',
         'DEPLOYED'    => 'false',
     ];
     if (!file_exists(GOW_CFG)) return $cfg;
@@ -131,6 +134,13 @@ function valid_tcp_port($port) {
         && (int)$port >= 1 && (int)$port <= 65535;
 }
 
+// Matches valid_run_id() in scripts/app-state.sh. 0 is excluded on purpose:
+// apps would run as root, and Wolf's own state folders would follow.
+function valid_run_id($id) {
+    return is_string($id) && preg_match('/^[0-9]+$/', $id)
+        && (int)$id >= 1 && (int)$id <= 65533;
+}
+
 function cleanup_wolf_runtime_containers() {
     exec('docker rm -f WolfPulseAudio >/dev/null 2>&1 || true');
 }
@@ -174,6 +184,7 @@ function has_mdns_conflict() {
 define('FAQ_MODESET_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-wayland-support-nvidia_drmmodeset');
 define('FAQ_MDNS_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#moonlight-discovery-and-mdnsavahi-warnings');
 define('FAQ_ZERO_COPY_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#nvidia-stream-disconnects-with-no-video-received-zero-copy');
+define('FAQ_RUN_IDS_URL', 'https://github.com/games-on-whales/unraid-plugin/blob/main/docs/FAQ.md#apps-never-start-after-updating-app-state-owned-by-the-wrong-user');
 define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 
 // ── Action handlers ───────────────────────────────────────────────────────────
@@ -181,6 +192,7 @@ define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 $cfg     = load_cfg();
 $message = '';
 $error   = '';
+$diagnostics = '';
 $force_setup = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -196,6 +208,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cfg['WOLF_NETWORK_IPV4'] = trim($_POST['wolf_network_ipv4'] ?? '');
         // Unchecked checkboxes are absent from POST — treat missing as disabled.
         $cfg['WOLF_ZERO_COPY'] = isset($_POST['wolf_zero_copy']) ? 'true' : 'false';
+        $cfg['WOLF_RUN_UID'] = trim($_POST['wolf_run_uid'] ?? '99');
+        $cfg['WOLF_RUN_GID'] = trim($_POST['wolf_run_gid'] ?? '100');
 
         // Look up vendor/name/driver from the selected node
         $gpus = detect_gpus();
@@ -214,6 +228,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Selected GPU not recognised. Please refresh and try again.';
         } elseif (!valid_tcp_port($cfg['WOLF_DEN_PORT'])) {
             $error = 'Wolf Den port must be a TCP port between 1 and 65535.';
+        } elseif (!valid_run_id($cfg['WOLF_RUN_UID']) || !valid_run_id($cfg['WOLF_RUN_GID'])) {
+            $error = 'App run UID and GID must be numbers between 1 and 65533.';
         } elseif (!valid_network_mode($cfg['WOLF_NETWORK_MODE'])) {
             $error = 'Wolf network mode must be Host, Bridge, or Custom network.';
         } elseif ($cfg['WOLF_NETWORK_MODE'] === 'custom' && !valid_network_name($cfg['WOLF_NETWORK_NAME'])) {
@@ -258,6 +274,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exec('bash ' . GOW_SCRIPT_DIR . '/update.sh 2>&1', $out, $ret);
         $message = $ret === 0 ? 'Update complete.' : 'Update failed: ' . implode("\n", $out);
 
+    } elseif ($action === 'diagnose') {
+        exec('bash ' . GOW_SCRIPT_DIR . '/diagnose.sh 2>&1', $out, $ret);
+        $diagnostics = implode("\n", $out);
+
     } elseif ($action === 'reconfigure') {
         $cfg['DEPLOYED'] = 'false';
         save_cfg($cfg);
@@ -294,6 +314,8 @@ $wolf_network_mode = valid_network_mode($cfg['WOLF_NETWORK_MODE']) ? $cfg['WOLF_
 $wolf_network_name = $cfg['WOLF_NETWORK_NAME'];
 $wolf_network_ipv4 = $cfg['WOLF_NETWORK_IPV4'];
 $wolf_zero_copy    = ($cfg['WOLF_ZERO_COPY'] !== 'false');
+$wolf_run_uid      = valid_run_id($cfg['WOLF_RUN_UID']) ? $cfg['WOLF_RUN_UID'] : '99';
+$wolf_run_gid      = valid_run_id($cfg['WOLF_RUN_GID']) ? $cfg['WOLF_RUN_GID'] : '100';
 $moonlight_host    = ($wolf_network_mode === 'custom' && valid_ipv4($wolf_network_ipv4)) ? $wolf_network_ipv4 : $ip;
 $mdns_conflict   = $deployed && has_mdns_conflict();
 ?>
@@ -361,6 +383,13 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
 <?php endif; ?>
 <?php if ($error): ?>
   <div class="gow-msg err"><?= htmlspecialchars($error) ?></div>
+<?php endif; ?>
+<?php if ($diagnostics): ?>
+  <div class="gow-card">
+    <div class="gow-title">Diagnostics</div>
+    <p class="gow-help">Read-only. Paste this into a GitHub issue when reporting a problem.</p>
+    <div class="gow-log" style="max-height:none"><?= htmlspecialchars($diagnostics) ?></div>
+  </div>
 <?php endif; ?>
 
 <?php if ($deploying): ?>
@@ -447,6 +476,10 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
     <span><?= htmlspecialchars($wolf_den_port) ?></span>
   </div>
   <div class="gow-row">
+    <span class="gow-label">App run UID:GID</span>
+    <span><?= htmlspecialchars($wolf_run_uid . ':' . $wolf_run_gid) ?></span>
+  </div>
+  <div class="gow-row">
     <span class="gow-label">Wolf network</span>
     <span>
       <?= htmlspecialchars(ucfirst($wolf_network_mode)) ?>
@@ -477,6 +510,11 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
       <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="update">
       <button type="submit" class="gow-btn gow-btn-secondary">Update Images</button>
+    </form>
+    <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+      <input type="hidden" name="action" value="diagnose">
+      <button type="submit" class="gow-btn gow-btn-secondary">Diagnostics</button>
     </form>
     <form method="post" style="display:inline">
       <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
@@ -528,6 +566,26 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
       <input type="number" name="wolf_den_port" id="wolf_den_port" class="gow-input"
              value="<?= htmlspecialchars($wolf_den_port) ?>"
              min="1" max="65535" step="1">
+    </div>
+
+    <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">
+      <label class="gow-label" for="wolf_run_uid">App run UID / GID</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" name="wolf_run_uid" id="wolf_run_uid" class="gow-input"
+               value="<?= htmlspecialchars($wolf_run_uid) ?>"
+               min="1" max="65533" step="1" style="max-width:120px">
+        <span>:</span>
+        <input type="number" name="wolf_run_gid" id="wolf_run_gid" class="gow-input"
+               value="<?= htmlspecialchars($wolf_run_gid) ?>"
+               min="1" max="65533" step="1" style="max-width:120px">
+      </div>
+      <p class="gow-help">The user that apps such as Steam run as inside their
+         containers. Defaults to Unraid's <code>nobody:users</code> (99:100), which
+         owns appdata.
+         Set it to <code>1000:1000</code> if your app data was written by Wolf's own
+         default user and you would rather keep it that way. Installing re-owns
+         existing app state to match, which can take a while the first time.
+         <a href="<?= FAQ_RUN_IDS_URL ?>" target="_blank" class="gow-msg-link">Details</a>.</p>
     </div>
 
     <div class="gow-row" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px">

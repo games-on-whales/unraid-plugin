@@ -53,9 +53,11 @@ plugin install http://<your-dev-machine-ip>:8888/gow.plg
 |---|---|---|
 | `preinstall.sh` | Plugin install / boot replay | Unraid version check, plus non-fatal Docker, NVIDIA driver plugin, and network warnings |
 | `install.sh` | Plugin install | GPU detection, writes `gow.cfg` (installs `settings-ui.txz` only if `gow.plg` somehow did not) |
-| `deploy.sh` | User clicks Install in UI | udev rules, appdata dirs, `docker-compose.yml`, containers, retrying boot hook |
+| `deploy.sh` | User clicks Install in UI | udev rules, appdata dirs, app-state ownership, `docker-compose.yml`, containers, retrying boot hook |
 | `uninstall.sh` | Plugin remove | Stops containers, cleans `/boot/config/go`, removes udev rules |
-| `update.sh` | User clicks Update in UI | `docker compose pull && up -d` |
+| `update.sh` | User clicks Update in UI | `docker compose pull && up -d`, plus the same app-state ownership sync as `deploy.sh` |
+| `app-state.sh` | Sourced by `deploy.sh` and `update.sh` | Resolves the app run UID/GID and keeps Wolf's per-app state (and already-paired clients' saved UID/GID) matching it; restores `fake-udev`'s executable bit |
+| `diagnose.sh` | User clicks Diagnostics in UI | Read-only report: run UID/GID, saved client UIDs, app-state ownership, `fake-udev`, udev rules, socket volume ownership |
 | `vars.sh` | Sourced by all scripts | Shared env vars (`GOW_CFG`, `GOW_PLUGIN`, `DEFAULT_APPDATA`, …); reads `GOW_VERSION` from the installed `gow.plg` |
 
 All scripts are shipped inside `settings-ui.txz` and installed to `/boot/config/plugins/gow/scripts/` by `gow.plg`. `scripts/` in the repo is the single source of truth; the package build copies them in.
