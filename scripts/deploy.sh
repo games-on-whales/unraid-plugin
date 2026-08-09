@@ -13,6 +13,8 @@ err()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARN:  $*" >&2; }
 
+source "$(dirname "$0")/app-state.sh"
+
 [[ $EUID -eq 0 ]] || err "Must run as root"
 
 [[ -f "$GOW_CFG" ]] || err "Config not found at ${GOW_CFG} — run the plugin installer first"
@@ -25,12 +27,12 @@ WOLF_NETWORK_NAME="${WOLF_NETWORK_NAME:-}"
 WOLF_NETWORK_IPV4="${WOLF_NETWORK_IPV4:-}"
 WOLF_ZERO_COPY="${WOLF_ZERO_COPY:-true}"
 
-# Unraid's conventional service account is nobody:users (99:100), not the
-# 1000:1000 Wolf defaults to. Wolf hands these to every app container as
-# PUID/PGID, and the app state on disk has to be owned by the same pair —
-# see migrate_app_state_ownership.
-WOLF_RUN_UID=99
-WOLF_RUN_GID=100
+# Wolf hands these to every app container as PUID/PGID, and the app state on
+# disk has to be owned by the same pair — see migrate_app_state_ownership. The
+# default is Unraid's nobody:users (99:100) rather than Wolf's own 1000:1000,
+# because that is what owns appdata.
+resolve_run_ids \
+    || err "App run UID/GID must be numbers between 1 and 65533 (got ${WOLF_RUN_UID}:${WOLF_RUN_GID})"
 
 [[ -n "${RENDER_NODE:-}" ]] || err "No GPU configured. Select a GPU in Settings > Games on Whales."
 [[ -n "${GPU_VENDOR:-}"  ]] || err "GPU vendor not set. Re-run setup in Settings > Games on Whales."
@@ -219,47 +221,6 @@ migrate_legacy_etc_wolf() {
     info "Migrating existing Wolf data from ${legacy} into ${APPDATA}"
     cp -a -n "${legacy}/." "${APPDATA}/" 2>/dev/null \
         || warn "Could not migrate all existing Wolf data from ${legacy}"
-}
-
-# Wolf bind-mounts ${APPDATA}/profile-data/<profile>/<app> as /home/retro inside
-# each app container, which runs as WOLF_RUN_UID:WOLF_RUN_GID. Nothing re-owns
-# what is already in there — Wolf never chowns the folder, and the gow images
-# only chown the top level of $HOME — so after the run uid changed to 99:100 the
-# dotfiles, Steam library and Decky state left behind by the old uid became
-# unwritable and Steam stopped launching (issue #66).
-#
-# The stamp keeps this off the hot path: these trees hold entire Steam libraries,
-# so walking them on every Apply would be slow for no reason.
-migrate_app_state_ownership() {
-    local state_dir="${APPDATA}/profile-data"
-    local stamp="${APPDATA}/cfg/.run-ids"
-    local want="${WOLF_RUN_UID}:${WOLF_RUN_GID}"
-
-    [[ -d "$state_dir" ]] || return 0
-    [[ "$(cat "$stamp" 2>/dev/null || true)" != "$want" ]] || return 0
-
-    info "Re-owning Wolf app state under ${state_dir} as ${want} — this may take a while"
-    if chown -R "$want" "$state_dir"; then
-        printf '%s\n' "$want" > "$stamp"
-    else
-        warn "Could not re-own all of ${state_dir}; apps may fail to write their state"
-    fi
-}
-
-# WOLF_DEFAULT_RUN_UID/GID only apply to newly paired clients — clients paired
-# earlier keep the uid/gid saved in config.toml. Rewrite those so every pairing
-# runs as the user migrate_app_state_ownership just made the state folders owned
-# by, instead of a stale 1000:1000 that can no longer write them.
-normalize_client_run_ids() {
-    local cfg_file="${APPDATA}/cfg/config.toml"
-    [[ -f "$cfg_file" ]] || return 0
-    grep -q 'run_uid\|run_gid' "$cfg_file" || return 0
-
-    info "Aligning saved client run uid/gid with ${WOLF_RUN_UID}:${WOLF_RUN_GID}"
-    sed -i -E \
-        -e "s/(run_uid[[:space:]]*=[[:space:]]*)[0-9]+/\1${WOLF_RUN_UID}/g" \
-        -e "s/(run_gid[[:space:]]*=[[:space:]]*)[0-9]+/\1${WOLF_RUN_GID}/g" \
-        "$cfg_file"
 }
 
 cleanup_wolf_runtime_containers() {
@@ -668,8 +629,7 @@ install_udev_rules
 setup_appdata_dirs
 migrate_legacy_etc_wolf
 ensure_wolf_uuid
-normalize_client_run_ids
-migrate_app_state_ownership
+sync_app_state_ownership
 write_compose
 
 if [[ "$GPU_VENDOR" == "NVIDIA" ]]; then
