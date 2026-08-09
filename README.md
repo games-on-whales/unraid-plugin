@@ -71,6 +71,13 @@ The Settings page (**Settings → Games on Whales**) covers:
 Persistent udev rules and an auto-start hook are written to
 `/boot/config/go` so the stack comes back up after a reboot.
 
+The udev rules are Wolf's own
+[`85-wolf.rules`](https://github.com/games-on-whales/wolf/blob/stable/85-wolf.rules),
+fetched from upstream each time you deploy (a bundled copy is used if the server
+is offline) and installed as `/etc/udev/rules.d/85-wolf.rules`. They keep Wolf's
+virtual controllers off the host and out of other containers; Wolf's
+`scripts/wolf-input-diag.sh` can audit them if input still leaks.
+
 ## Pairing a Moonlight client
 
 Once the stack is running, open Wolf Den's pairing page:
