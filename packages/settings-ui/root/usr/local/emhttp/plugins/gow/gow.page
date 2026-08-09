@@ -192,6 +192,7 @@ define('WOLF_DEN_PAIRING_PATH', '/Clients/Pairing');
 $cfg     = load_cfg();
 $message = '';
 $error   = '';
+$diagnostics = '';
 $force_setup = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -272,6 +273,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'update') {
         exec('bash ' . GOW_SCRIPT_DIR . '/update.sh 2>&1', $out, $ret);
         $message = $ret === 0 ? 'Update complete.' : 'Update failed: ' . implode("\n", $out);
+
+    } elseif ($action === 'diagnose') {
+        exec('bash ' . GOW_SCRIPT_DIR . '/diagnose.sh 2>&1', $out, $ret);
+        $diagnostics = implode("\n", $out);
 
     } elseif ($action === 'reconfigure') {
         $cfg['DEPLOYED'] = 'false';
@@ -378,6 +383,13 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
 <?php endif; ?>
 <?php if ($error): ?>
   <div class="gow-msg err"><?= htmlspecialchars($error) ?></div>
+<?php endif; ?>
+<?php if ($diagnostics): ?>
+  <div class="gow-card">
+    <div class="gow-title">Diagnostics</div>
+    <p class="gow-help">Read-only. Paste this into a GitHub issue when reporting a problem.</p>
+    <div class="gow-log" style="max-height:none"><?= htmlspecialchars($diagnostics) ?></div>
+  </div>
 <?php endif; ?>
 
 <?php if ($deploying): ?>
@@ -498,6 +510,11 @@ $mdns_conflict   = $deployed && has_mdns_conflict();
       <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
       <input type="hidden" name="action" value="update">
       <button type="submit" class="gow-btn gow-btn-secondary">Update Images</button>
+    </form>
+    <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+      <input type="hidden" name="action" value="diagnose">
+      <button type="submit" class="gow-btn gow-btn-secondary">Diagnostics</button>
     </form>
     <form method="post" style="display:inline">
       <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">

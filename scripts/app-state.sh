@@ -120,9 +120,40 @@ normalize_client_run_ids() {
         "$cfg_file"
 }
 
-# Both entry points do the same two things in the same order: point already
-# paired clients at the run ids, then make the state on disk match them.
+fake_udev_path() { printf '%s/fake-udev' "$APPDATA"; }
+
+# Wolf copies its fake-udev helper into the state folder on every start and
+# bind-mounts it into each app container as /usr/bin/fake-udev, then docker-execs
+# it to hot-plug controllers. `cp` keeps the mode of an existing destination, so
+# a copy that once landed without +x stays broken forever — the app container
+# then logs "Docker exec failed (126) ... /usr/bin/fake-udev: Permission denied"
+# and controllers never appear inside the app.
+ensure_fake_udev_executable() {
+    local helper
+    helper="$(fake_udev_path)"
+    [[ -f "$helper" ]] || return 0
+    [[ -x "$helper" ]] && return 0
+
+    info "Making ${helper} executable so Wolf can hot-plug controllers"
+    chmod a+rx "$helper" || warn "Could not make ${helper} executable; controllers may not appear inside apps"
+}
+
+# A noexec appdata mount breaks the same thing, and no amount of chmod fixes it.
+# Unassigned Devices shares in particular can be mounted this way.
+warn_if_appdata_noexec() {
+    local opts
+    opts="$(findmnt -no OPTIONS --target "$APPDATA" 2>/dev/null || true)"
+    [[ ",${opts}," == *",noexec,"* ]] || return 0
+
+    warn "${APPDATA} is on a noexec mount — Wolf's fake-udev helper cannot run, so controllers will not appear inside apps. Move appdata to a share mounted without noexec."
+}
+
+# Both entry points do the same things in the same order: point already paired
+# clients at the run ids, make the state on disk match them, and keep the helper
+# Wolf hands to app containers runnable.
 sync_app_state_ownership() {
     normalize_client_run_ids
     migrate_app_state_ownership
+    ensure_fake_udev_executable
+    warn_if_appdata_noexec
 }

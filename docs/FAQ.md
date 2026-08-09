@@ -1,5 +1,18 @@
 # FAQ
 
+## Start here: Diagnostics
+
+**Settings > Games on Whales > Diagnostics** prints a read-only report — the
+configured run UID/GID, the UID saved for already-paired clients, ownership of
+the app state folders, whether Wolf's `fake-udev` helper can run, the installed
+udev rules, and the ownership of Wolf's runtime socket volume. It changes
+nothing and is safe to run while streaming.
+
+Every check that fails is printed with what it breaks and how to fix it. Include
+the output when reporting an issue; it answers most of the questions below
+without a round trip. From a terminal it is
+`bash /boot/config/plugins/gow/scripts/diagnose.sh`.
+
 ## NVIDIA Wayland support (nvidia_drm.modeset)
 
 Wolf composes its game stream through a Wayland compositor, and Wayland on
@@ -116,6 +129,36 @@ each time, so a stamp can never mask state that has drifted back.
 If your app data was written by Wolf's own default user and you would rather
 keep it that way, set **App run UID / GID** to `1000:1000` in the setup form
 instead; the same migration then re-owns everything to that pair.
+
+## Controllers never appear inside an app (fake-udev)
+
+Wolf hot-plugs your controller into the running app container by copying a
+helper called `fake-udev` into the appdata folder, bind-mounting it into the
+container as `/usr/bin/fake-udev`, and executing it there. If that helper cannot
+be executed, the app sees no input devices — sway logs
+`Path '/dev/input/*' is not present.` and the controller does nothing.
+
+### Check
+
+Wolf's own log shows the exec failing with status 126:
+
+```text
+WARN | Docker exec failed (126), /bin/bash: line 1: /usr/bin/fake-udev: Permission denied
+```
+
+**Diagnostics** reports the same thing under *Controller hot-plug (fake-udev)*.
+
+### Fix
+
+Two causes, both reported by Diagnostics:
+
+- **The helper lost its executable bit.** Wolf refreshes it with `cp`, which
+  keeps the mode of an existing file, so a copy that once landed without `+x`
+  stays broken. Re-deploy (**Install** or **Update Images**) — the plugin now
+  restores the bit before starting Wolf.
+- **Appdata is on a `noexec` mount.** Nothing can execute from there, so no
+  chmod helps. This shows up on some Unassigned Devices shares. Move appdata to
+  a share mounted without `noexec`, or remount it.
 
 ## Moonlight discovery and mDNS/Avahi warnings
 

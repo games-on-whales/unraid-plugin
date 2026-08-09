@@ -28,6 +28,8 @@
 - Re-own `profile_data` as well as `profile-data`, and stop trusting the `.run-ids` stamp on its own — the tree is spot-checked each run, so state that drifted back to another owner is re-migrated instead of being skipped
 - Add an **App run UID / GID** setting (default `99:100`, Unraid's `nobody:users`). Set it to `1000:1000` to keep app data owned by Wolf's own default user; the migration re-owns existing state to whichever pair is configured
 - Fix **Update Images** failing with "Wolf is not deployed" while the stack was running: it now treats a generated `docker-compose.yml` as the source of truth and repairs the stale `DEPLOYED` flag
+- Fix controllers never appearing inside apps when Wolf's `fake-udev` helper lost its executable bit (`Docker exec failed (126) … Permission denied`). Wolf refreshes the helper with `cp`, which keeps the mode of an existing file, so the plugin now restores it before starting Wolf — and warns when appdata sits on a `noexec` mount, where nothing can fix it
+- Add a **Diagnostics** button (and `scripts/diagnose.sh`) that reports run UID/GID, the UID saved for paired clients, app-state ownership, `fake-udev`, the installed udev rules, and the socket volume owner. Read-only, safe while streaming, and meant to be pasted into bug reports
 
 ### 2026.08.09
 - Fix gamepad input leaking out of the streamed session (kicked back to Wolf UI, another app container launching, host desktop reacting): the plugin's hand-written udev rules matched device names Wolf no longer uses and never stripped the `uaccess` ACL. Deploy now installs Wolf's own `85-wolf.rules` (games-on-whales/wolf#455), fetched from upstream at deploy time with a bundled fallback when the host is offline
