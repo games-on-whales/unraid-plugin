@@ -126,6 +126,18 @@ while if the Steam library is large. The result is recorded in
 `<appdata>/cfg/.run-ids` and skipped afterwards — but the tree is spot-checked
 each time, so a stamp can never mask state that has drifted back.
 
+The plugin also installs an inheritable ACL on the two app-state roots. Wolf
+runs as root and creates a client's app home only when that app is first
+launched, which can be later than deployment; the ACL lets the configured app
+UID/GID write those newly created directories immediately. The next Install or
+Update Images normalizes their ownership without walking an already-clean Steam
+library.
+
+This prevention requires an ACL-capable appdata filesystem and the `setfacl`
+utility. If either is unavailable, Install / Update Images prints a warning;
+existing state is still repaired, but a first app home created later by Wolf may
+need another ownership repair.
+
 If your app data was written by Wolf's own default user and you would rather
 keep it that way, set **App run UID / GID** to `1000:1000` in the setup form
 instead; the same migration then re-owns everything to that pair.

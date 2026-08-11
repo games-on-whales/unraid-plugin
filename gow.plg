@@ -3,7 +3,7 @@
 <!ENTITY name      "gow">
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
-<!ENTITY version   "2026.08.09a">
+<!ENTITY version   "2026.08.11">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
 <!ENTITY pluginURL "https://github.com/&org;/unraid-plugin/releases/latest/download/&name;.plg">
@@ -23,6 +23,9 @@
 >
 
   <CHANGES>
+### 2026.08.11
+- Prevent fresh installs from creating an unwritable first app home: deploy now seeds both app-state roots with an inheritable ACL for the configured app UID/GID, so directories Wolf creates later as root remain writable immediately; ownership is normalized on the next Install or Update Images
+
 ### 2026.08.09a
 - Fix apps (Steam, Lutris) still failing to start after 2026.07.30: the app-state ownership migration only ran from **Install**, so anyone who clicked **Update Images** after the plugin update never got it. Both actions now re-own app state and align the UID/GID saved for already-paired clients
 - Re-own `profile_data` as well as `profile-data`, and stop trusting the `.run-ids` stamp on its own — the tree is spot-checked each run, so state that drifted back to another owner is re-migrated instead of being skipped
