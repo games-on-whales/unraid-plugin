@@ -46,6 +46,54 @@ app_state_dirs() {
     return 0
 }
 
+# Wolf itself runs as root and creates a client's profile/app directories when
+# that client launches an app for the first time. On a fresh install there is
+# no tree for migrate_app_state_ownership() to chown before Wolf starts, so the
+# first app home used to land as root:root and Steam failed before the next
+# Install / Update Images could repair it.
+#
+# Seed both supported roots and give the configured app uid/gid an inheritable
+# ACL. Every directory Wolf creates below them then remains writable by the app
+# even though Wolf is its owner. Only the root and the profile/app directory
+# levels are touched here; applying this on every sync stays cheap even when an
+# app home contains a large Steam library. The normal ownership migration still
+# re-owns existing drift and records the stamp.
+prepare_app_state_roots() {
+    local name state_dir want="${WOLF_RUN_UID}:${WOLF_RUN_GID}"
+    local acl="u:${WOLF_RUN_UID}:rwx,g:${WOLF_RUN_GID}:rwx,m::rwx,d:u:${WOLF_RUN_UID}:rwx,d:g:${WOLF_RUN_GID}:rwx,d:m::rwx"
+    local have_setfacl=true
+    if ! valid_run_id "${WOLF_RUN_UID:-}" || ! valid_run_id "${WOLF_RUN_GID:-}"; then
+        warn "Cannot prepare Wolf app state roots: invalid run UID/GID ${WOLF_RUN_UID:-unset}:${WOLF_RUN_GID:-unset}"
+        return 1
+    fi
+    if ! command -v setfacl >/dev/null 2>&1; then
+        have_setfacl=false
+        warn "setfacl is unavailable; Wolf may create new app homes that ${want} cannot write"
+    fi
+
+    for name in "${APP_STATE_ROOTS[@]}"; do
+        state_dir="${APPDATA}/${name}"
+        if ! mkdir -p "$state_dir"; then
+            warn "Could not create Wolf app state root ${state_dir}"
+            continue
+        fi
+        if ! chown "$want" "$state_dir" || ! chmod 2775 "$state_dir"; then
+            warn "Could not prepare ${state_dir} for apps running as ${want}"
+            continue
+        fi
+        [[ "$have_setfacl" == true ]] || continue
+
+        # Existing profile/app directories need the same default ACL so a new
+        # root-created child (notably udev/) inherits access too: the state root
+        # is depth 0, profile/client is 1, and app HOME is 2. The bounded walk
+        # never reaches the Steam library below HOME.
+        if ! find "$state_dir" -maxdepth 2 -type d \
+            -exec setfacl -m "$acl" -- {} +; then
+            warn "Could not set inherited app access under ${state_dir}; fresh app homes may be unwritable"
+        fi
+    done
+}
+
 # Prints the first path under $1 that is not owned by the run uid/gid, if any.
 # Depth-limited: this runs on the hot path, and a mismatch always shows up near
 # the top because the app's home directory is the mount point itself.
@@ -153,6 +201,7 @@ warn_if_appdata_noexec() {
 # Wolf hands to app containers runnable.
 sync_app_state_ownership() {
     normalize_client_run_ids
+    prepare_app_state_roots
     migrate_app_state_ownership
     ensure_fake_udev_executable
     warn_if_appdata_noexec
