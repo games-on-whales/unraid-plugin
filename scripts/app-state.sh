@@ -94,15 +94,14 @@ prepare_app_state_roots() {
     done
 }
 
-# Ownership is the wrong question. Wolf runs as root and creates the profile,
-# app and udev directories; the app images' /etc/cont-init.d scripts also run as
-# root and create $HOME/.steam and $HOME/homebrew before dropping to the run uid,
-# and Decky owns homebrew/plugins as root on purpose. All of that comes back
-# root-owned on every launch, so no host-side chown can hold it — the inheritable
-# ACL is what makes those paths writable. access(2) honours that ACL, so ask the
-# kernel rather than comparing uids (issue #66: root-owned-but-writable paths
-# were reported as breakage forever, and re-triggered a full chown -R over a
-# Steam library on every deploy).
+# Ownership is the wrong question. Wolf runs as root and creates the profile and
+# app directories; the app images' /etc/cont-init.d scripts also run as root and
+# create $HOME/.steam and $HOME/homebrew before dropping to the run uid. Those
+# paths come back root-owned on every launch, so no host-side chown can hold it —
+# the inheritable ACL is what makes app-user state writable. access(2) honours
+# that ACL, so ask the kernel rather than comparing uids (issue #66:
+# root-owned-but-writable paths were reported as breakage forever, and
+# re-triggered a full chown -R over a Steam library on every deploy).
 #
 # Resolved once: "setpriv" when we can drop to the run ids and ask, "ownership"
 # when we cannot and must fall back to over-reporting.
@@ -141,6 +140,40 @@ run_ids_can_write() {
     [[ "$owner" == "${WOLF_RUN_UID}:${WOLF_RUN_GID}" ]]
 }
 
+# Some paths inside an app HOME belong to root services rather than to the
+# unprivileged app process. Requiring the run ids to write them produces a
+# permanent false alarm and a futile chown/ACL loop:
+#
+#   - Wolf owns udev/ and updates it through root docker-exec calls.
+#   - the Steam image's root init owns homebrew/services/ and launches Decky
+#     Loader from there as root.
+#   - Decky deliberately chowns homebrew/plugins/ to its effective user (root)
+#     and chmods it 0755 every start. That chmod clips an inherited ACL's mask to
+#     r-x, so no inherited named-user ACL can make the directory writable after
+#     Decky has normalised it.
+#
+# These exceptions are relative to any profile/app HOME, rather than tied to a
+# particular profile or app name. All other paths — notably .steam/ and the app
+# HOME itself — still have to pass the real run-id access probe.
+app_state_path_is_service_managed() {
+    local state_dir="$1" path="$2" relative remainder service_path
+    [[ "$path" == "${state_dir}/"* ]] || return 1
+    relative="${path#"${state_dir}/"}"
+
+    # Strip exactly the profile and app components. Matching the service path
+    # only from the app HOME boundary avoids hiding an unrelated nested folder
+    # that merely happens to contain names such as homebrew/plugins.
+    [[ "$relative" == */* ]] || return 1
+    remainder="${relative#*/}"
+    [[ "$remainder" == */* ]] || return 1
+    service_path="${remainder#*/}"
+
+    case "/${service_path}/" in
+        /udev/*|/homebrew/services/*|/homebrew/plugins/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # How deep to look. These trees hold entire Steam libraries, so the walk has to
 # be bounded, and a fault shows up near the top because the app's home directory
 # is the mount point itself: state root is depth 0, profile 1, app HOME 2, and
@@ -153,10 +186,29 @@ run_ids_can_write() {
 APP_STATE_PROBE_DEPTH=4
 
 # Probing forks a process per path, so bound the candidate list. Only paths not
-# already owned by the run ids are probed at all, and the first failure ends the
-# scan, so this cap is only reached on a tree where everything checked so far is
-# fine.
+# already owned by the run ids are probed at all, root-service subtrees are
+# pruned before enumeration, and the first failure ends the scan. This cap is
+# therefore only spent on paths the app user may actually need to write.
 APP_STATE_PROBE_LIMIT=200
+
+# Enumerates the bounded set used by both repair and diagnostics. Pruning must
+# happen inside find: filtering service paths afterwards can still drain a huge
+# stream before head sees APP_STATE_PROBE_LIMIT candidates. The state root's
+# basename is one of the two constants in APP_STATE_ROOTS, so these patterns
+# match exactly <root>/<profile>/<app>/<service path> without depending on the
+# user-configurable APPDATA prefix.
+app_state_probe_candidates() {
+    local state_dir="$1" root_name
+    root_name="${state_dir##*/}"
+    find "$state_dir" -maxdepth "$APP_STATE_PROBE_DEPTH" \
+        \( -type d \( \
+            -path "*/${root_name}/*/*/udev" -o \
+            -path "*/${root_name}/*/*/homebrew/services" -o \
+            -path "*/${root_name}/*/*/homebrew/plugins" \
+        \) \) -prune -o \
+        \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
+        -print 2>/dev/null | head -n "$APP_STATE_PROBE_LIMIT"
+}
 
 # Prints the first path under $1 the run ids cannot write, if any. Ownership is
 # only the cheap pre-filter that enumerates candidates — a path already owned by
@@ -165,12 +217,13 @@ first_unwritable_path() {
     local path
     while read -r path; do
         [[ -n "$path" ]] || continue
+        # Keep the semantic guard as well as find's traversal pruning so an
+        # unexpected non-directory service path cannot become a false failure.
+        app_state_path_is_service_managed "$1" "$path" && continue
         run_ids_can_write "$path" && continue
         printf '%s\n' "$path"
         return 0
-    done < <(find "$1" -maxdepth "$APP_STATE_PROBE_DEPTH" \
-                 \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
-                 -print 2>/dev/null | head -n "$APP_STATE_PROBE_LIMIT")
+    done < <(app_state_probe_candidates "$1")
     return 0
 }
 
@@ -183,8 +236,9 @@ first_unwritable_path() {
 #
 # Walking the whole tree costs the same as the chown -R beside it, and both only
 # run when the state is actually broken, so a healthy install never pays it.
-# Once every existing directory carries the default ACL, everything Wolf and the
-# app images create below it inherits access for good.
+# Once every existing directory carries the default ACL, ordinary new app state
+# inherits access. A root service can still deliberately replace ownership and
+# mode on its own paths; those are classified separately above.
 repair_app_state_acls() {
     local state_dir="$1" access defaults
     command -v setfacl >/dev/null 2>&1 || return 0

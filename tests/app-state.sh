@@ -45,6 +45,46 @@ own_as_run_ids() {
 # shellcheck source=../scripts/app-state.sh
 source "$ROOT/scripts/app-state.sh"
 
+# Root services own these subtrees; ordinary app-user state must never be
+# accidentally swept into the exception.
+state="$APPDATA/profile-data"
+app_state_path_is_service_managed "$state" "$state/user/WolfSteam/udev"
+app_state_path_is_service_managed "$state" "$state/user/WolfSteam/udev/data/device"
+app_state_path_is_service_managed "$state" "$state/user/WolfSteam/homebrew/services"
+app_state_path_is_service_managed "$state" "$state/user/WolfSteam/homebrew/plugins"
+if app_state_path_is_service_managed "$state" "$state/user/WolfSteam/.steam"; then
+    echo ".steam was incorrectly classified as root-service state" >&2
+    exit 1
+fi
+if app_state_path_is_service_managed "$state" "$state/user/WolfSteam/cache/homebrew/plugins"; then
+    echo "a nested lookalike was incorrectly classified as root-service state" >&2
+    exit 1
+fi
+if app_state_path_is_service_managed "$state" "$state/user/udev"; then
+    echo "an app named udev was incorrectly classified as root-service state" >&2
+    exit 1
+fi
+
+# The shared candidate enumerator must prune service trees before applying its
+# cap, while retaining a neighbouring app-user path at the same depth.
+probe_state="$TMP/probe-state/profile-data"
+mkdir -p "$probe_state/user/WolfSteam/udev/data" \
+         "$probe_state/user/WolfSteam/homebrew/services" \
+         "$probe_state/user/WolfSteam/homebrew/plugins" \
+         "$probe_state/user/WolfSteam/.steam"
+saved_uid="$WOLF_RUN_UID"
+saved_gid="$WOLF_RUN_GID"
+WOLF_RUN_UID=1
+WOLF_RUN_GID=1
+mapfile -t candidates < <(app_state_probe_candidates "$probe_state")
+WOLF_RUN_UID="$saved_uid"
+WOLF_RUN_GID="$saved_gid"
+printf '%s\n' "${candidates[@]}" | grep -Fx "$probe_state/user/WolfSteam/.steam" >/dev/null
+if printf '%s\n' "${candidates[@]}" | grep -E '/(udev|homebrew/(services|plugins))(/|$)' >/dev/null; then
+    echo "root-service state leaked into the app-user probe candidates" >&2
+    exit 1
+fi
+
 sync_app_state_ownership
 
 for name in profile-data profile_data; do
@@ -147,14 +187,32 @@ if [[ "$(id -u)" == 0 && -n "$REAL_SETFACL" ]] && command -v setpriv >/dev/null 
     # reported as breakage, which is what the user kept seeing after every fix.
     [[ -z "$(first_unwritable_path "$APPDATA/profile-data")" ]]
 
-    # $HOME/homebrew/plugins sits at APP_STATE_PROBE_DEPTH. diagnose.sh named it
-    # in the user's report, so the repair has to scan that far too — when the two
-    # used different depths, "fix: run Install" could not clear the warning it
-    # told the user to run Install for.
+    # Decky itself now reproduces the latest report on #66: on every start it
+    # chowns the plugin root to its effective user (root) and chmods it 0755.
+    # chmod recomputes the ACL mask as r-x, clipping the inherited run-id entry.
+    # This is intentional root-service state, so it must neither fail diagnosis
+    # nor trigger another recursive repair over the Steam library.
     chown 0:0 "$deep"
-    setfacl -b -- "$deep"
-    chmod 700 "$deep"
-    [[ "$(first_unwritable_path "$APPDATA/profile-data")" == "$deep" ]]
+    chmod 755 "$deep"
+    if run_ids_can_write "$deep"; then
+        echo "Decky's chmod did not reproduce the clipped ACL mask" >&2
+        exit 1
+    fi
+    [[ -z "$(first_unwritable_path "$APPDATA/profile-data")" ]]
+    printf '%s:%s\n' "$WOLF_RUN_UID" "$WOLF_RUN_GID" > "$APPDATA/cfg/.run-ids"
+    migrate_app_state_ownership
+    [[ "$(stat -c '%u:%g' "$deep")" == "0:0" ]]
+
+    # A neighbouring app-user path with equally broken access is still caught
+    # and repaired; the service exception must not hide general ACL drift.
+    user_state="$APPDATA/profile-data/user/WolfSteam/.steam"
+    chown 0:0 "$user_state"
+    setfacl -b -- "$user_state"
+    chmod 700 "$user_state"
+    [[ "$(first_unwritable_path "$APPDATA/profile-data")" == "$user_state" ]]
+    sync_app_state_ownership
+    run_ids_can_write "$user_state"
+    [[ -z "$(first_unwritable_path "$APPDATA/profile-data")" ]]
 else
     echo "real ACL writability test skipped (setfacl, setpriv, and root required)" >&2
 fi

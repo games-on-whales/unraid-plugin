@@ -70,10 +70,12 @@ fi
 section "App state access"
 stamp="$(app_state_stamp)"
 note "stamp:    $(cat "$stamp" 2>/dev/null || echo '(none)')"
-# Root ownership inside the app state tree is normal: Wolf creates the profile,
-# app and udev directories as root, and the app images create $HOME/.steam and
-# $HOME/homebrew from root-run init scripts. What matters is whether the run ids
-# can write them, which the inherited ACL decides — so report that, not the uid.
+# Root ownership inside the app state tree is normal: Wolf creates the profile
+# and app directories as root, and the app images create $HOME/.steam and
+# $HOME/homebrew from root-run init scripts. What matters for app-user state is
+# whether the run ids can write it, which the inherited ACL decides. Root-only
+# service state (Wolf's udev data and Decky's service/plugin directories) is
+# excluded because the unprivileged app neither owns nor writes it.
 if [[ "$(app_state_probe_kind)" == ownership ]]; then
     note "check:    ownership only — setpriv is unavailable or this is not running"
     note "          as root, so root-owned paths an ACL makes writable are over-reported"
@@ -98,14 +100,13 @@ while read -r dir; do
     inherited=0
     while read -r path; do
         [[ -n "$path" ]] || continue
+        app_state_path_is_service_managed "$dir" "$path" && continue
         if run_ids_can_write "$path"; then
             inherited=$((inherited + 1))
             continue
         fi
         unwritable+="${path}"$'\n'
-    done < <(find "$dir" -maxdepth "$APP_STATE_PROBE_DEPTH" \
-                 \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
-                 -print 2>/dev/null | head -n "$APP_STATE_PROBE_LIMIT")
+    done < <(app_state_probe_candidates "$dir")
 
     if [[ -z "$unwritable" ]]; then
         ok "${WANT} can write everything under ${dir}"
