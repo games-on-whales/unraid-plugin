@@ -1,0 +1,68 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check every script
+        run: |
+          rc=0
+          while IFS= read -r f; do
+            if bash -n "$f"; then
+              echo "OK    $f"
+            else
+              echo "FAIL  $f"
+              rc=1
+            fi
+          done < <(find scripts tests utils -name '*.sh' -type f | sort)
+          exit $rc
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          # Errors only, and it gates. The scripts predate any linting, so there
+          # are still warning-level findings; adopting those is a separate job of
+          # work, and a step that can never fail is not worth running.
+          shellcheck -S error scripts/*.sh tests/*.sh
+
+      # The app-state suite skips its load-bearing assertions unless it can
+      # actually drop to another uid and set POSIX ACLs — exactly the two things
+      # a developer laptop usually cannot do, which is why issue #66 shipped
+      # three fixes that were never executed end to end. A runner can do both.
+      - name: Install ACL tooling
+        run: |
+          sudo apt-get install -y -qq acl
+          command -v setfacl
+          command -v setpriv
+
+      - name: app-state suite (as root, with real ACLs)
+        run: |
+          out="$(sudo bash tests/app-state.sh 2>&1)"; rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::app-state suite failed"
+            exit 1
+          fi
+          # A skip here means the run proved nothing, and a green check that
+          # proves nothing is worse than a red one. Fail on it.
+          if echo "$out" | grep -q 'skipped'; then
+            echo "::error::the suite skipped a branch it was supposed to run here"
+            exit 1
+          fi
+
+      - name: app-state suite (unprivileged, mocked ACLs)
+        run: |
+          # The same suite must still pass where setfacl/setpriv are absent,
+          # because that is the fallback path on a host without them.
+          bash tests/app-state.sh

@@ -67,20 +67,64 @@ else
     bad "no config.toml at ${cfg_toml}"
 fi
 
-section "App state ownership"
+section "App state access"
 stamp="$(app_state_stamp)"
 note "stamp:    $(cat "$stamp" 2>/dev/null || echo '(none)')"
+# Root ownership inside the app state tree is normal: Wolf creates the profile,
+# app and udev directories as root, and the app images create $HOME/.steam and
+# $HOME/homebrew from root-run init scripts. What matters is whether the run ids
+# can write them, which the inherited ACL decides — so report that, not the uid.
+if [[ "$(app_state_probe_kind)" == ownership ]]; then
+    note "check:    ownership only — setpriv is unavailable or this is not running"
+    note "          as root, so root-owned paths an ACL makes writable are over-reported"
+else
+    note "check:    real write access as ${WANT} (honours inherited ACLs)"
+fi
+
+# One line of ACL context per bad path: the run uid's entry and the mask are
+# what explain a path that looks permissive but is not (a chmod clips the mask
+# and with it every named entry).
+acl_summary() {
+    command -v getfacl >/dev/null 2>&1 || return 0
+    getfacl -p --omit-header -- "$1" 2>/dev/null \
+        | grep -E "^(user:${WOLF_RUN_UID}:|mask::)" | tr '\n' ' '
+}
+
 found=false
 while read -r dir; do
     [[ -n "$dir" ]] || continue
     found=true
-    foreign="$(find "$dir" -maxdepth 4 \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
-                 -printf '%u:%g %p\n' 2>/dev/null | head -5)"
-    if [[ -z "$foreign" ]]; then
-        ok "${dir} is owned by ${WANT}"
+    unwritable=""
+    inherited=0
+    while read -r path; do
+        [[ -n "$path" ]] || continue
+        if run_ids_can_write "$path"; then
+            inherited=$((inherited + 1))
+            continue
+        fi
+        unwritable+="${path}"$'\n'
+    done < <(find "$dir" -maxdepth "$APP_STATE_PROBE_DEPTH" \
+                 \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
+                 -print 2>/dev/null | head -n "$APP_STATE_PROBE_LIMIT")
+
+    if [[ -z "$unwritable" ]]; then
+        ok "${WANT} can write everything under ${dir}"
+        (( inherited > 0 )) && note "${inherited} path(s) are root-owned by design; the inherited ACL keeps them writable"
     else
-        bad "${dir} has paths not owned by ${WANT}:"
-        while read -r line; do note "  ${line}"; done <<< "$foreign"
+        # Say what was actually established. The fallback only compared uids, so
+        # claiming the app cannot write these paths would be asserting more than
+        # was checked.
+        if [[ "$(app_state_probe_kind)" == ownership ]]; then
+            bad "these paths under ${dir} are not owned by ${WANT}:"
+        else
+            bad "${WANT} cannot write these paths under ${dir}:"
+        fi
+        while read -r path; do
+            [[ -n "$path" ]] || continue
+            note "  $(stat -c '%U:%G %a' "$path" 2>/dev/null) ${path}"
+            acl="$(acl_summary "$path")"
+            [[ -n "$acl" ]] && note "      acl: ${acl}"
+        done < <(printf '%s' "$unwritable" | head -5)
         note "apps cannot write their own home directory — this stops Steam at startup"
         note "fix: Settings > Games on Whales > Install (or Update Images)"
     fi

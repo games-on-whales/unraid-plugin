@@ -1,3 +1,6 @@
+#!/bin/bash
+# utils.sh — package name/URL helpers and checked downloads. Sourced, not run.
+
 export KERNEL_VER="$(uname -r)"
 export PACKAGE_DIR="$GOW_PLUGIN/packages"
 
