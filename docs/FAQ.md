@@ -138,6 +138,14 @@ utility. If either is unavailable, Install / Update Images prints a warning;
 existing state is still repaired, but a first app home created later by Wolf may
 need another ownership repair.
 
+Some directories under an app home are intentionally owned by root services,
+not by the app user. In particular, Wolf manages `udev/`, while the Steam
+container's root init and Decky Loader manage `homebrew/services/` and
+`homebrew/plugins/`. Decky resets its plugin directory to root-owned mode `0755`
+on every start, which also clips inherited ACL write access. Diagnostics excludes
+these service-only paths while continuing to verify and repair user state such
+as `.steam/` and the app home itself.
+
 If your app data was written by Wolf's own default user and you would rather
 keep it that way, set **App run UID / GID** to `1000:1000` in the setup form
 instead; the same migration then re-owns everything to that pair.
