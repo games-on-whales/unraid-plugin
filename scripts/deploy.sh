@@ -200,18 +200,40 @@ EOF
 
 # ── appdata directories ───────────────────────────────────────────────────────
 
+# Wolf Den's entrypoint drops privileges to this uid via gosu. It is fixed by
+# the image, not by the app run ids: apps never see these directories, because
+# Wolf gives an app container only its own home directory.
+WOLF_DEN_UID=1000
+WOLF_DEN_GID=1000
+
 setup_appdata_dirs() {
     info "Creating appdata directories at ${APPDATA}"
     mkdir -p \
         "${APPDATA}/cfg" \
         "${APPDATA}/wolf-den" \
         "${APPDATA}/covers" \
-        "${APPDATA}/steam" \
         "${APPDATA}/compatibilitytools.d"
-    # wolf-den drops privileges to UID 1000 via gosu, so its writable dirs
-    # must be accessible before the app starts.
-    chown -R 1000:1000 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d" 2>/dev/null || true
-    chmod 775 "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d"
+    # No steam/ here on purpose. It existed only for a ${APPDATA}/steam:/etc/wolf/steam
+    # mount that went away with the identity mount, and nothing has read it since:
+    # Wolf keeps Steam's data in the app's own home under the app state root.
+    # Existing (empty) ones are left alone rather than deleted.
+
+    # covers/ and compatibilitytools.d/ no longer have mounts of their own —
+    # wolf-den reaches them through ${APPDATA}:/etc/wolf, which lands them at the
+    # same in-container paths the explicit mounts used to provide. They still
+    # have to be writable by the uid wolf-den runs as before it starts.
+    #
+    # A failing chown must not abort the deploy (some appdata shares sit on
+    # filesystems that refuse it) but it must not pass silently either: this used
+    # to be `2>/dev/null || true` next to an unguarded chmod, so the failure that
+    # actually breaks Wolf Den was the one that got hidden.
+    local dir
+    for dir in "${APPDATA}/wolf-den" "${APPDATA}/covers" "${APPDATA}/compatibilitytools.d"; do
+        chown -R "${WOLF_DEN_UID}:${WOLF_DEN_GID}" "$dir" \
+            || warn "Could not give ${dir} to ${WOLF_DEN_UID}:${WOLF_DEN_GID}; Wolf Den may fail to write it"
+        chmod 775 "$dir" \
+            || warn "Could not set mode 775 on ${dir}; Wolf Den may fail to write it"
+    done
 }
 
 migrate_legacy_etc_wolf() {

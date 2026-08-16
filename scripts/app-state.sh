@@ -94,12 +94,116 @@ prepare_app_state_roots() {
     done
 }
 
-# Prints the first path under $1 that is not owned by the run uid/gid, if any.
-# Depth-limited: this runs on the hot path, and a mismatch always shows up near
-# the top because the app's home directory is the mount point itself.
-first_foreign_path() {
-    find "$1" -maxdepth 3 \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
-        -print -quit 2>/dev/null
+# Ownership is the wrong question. Wolf runs as root and creates the profile,
+# app and udev directories; the app images' /etc/cont-init.d scripts also run as
+# root and create $HOME/.steam and $HOME/homebrew before dropping to the run uid,
+# and Decky owns homebrew/plugins as root on purpose. All of that comes back
+# root-owned on every launch, so no host-side chown can hold it — the inheritable
+# ACL is what makes those paths writable. access(2) honours that ACL, so ask the
+# kernel rather than comparing uids (issue #66: root-owned-but-writable paths
+# were reported as breakage forever, and re-triggered a full chown -R over a
+# Steam library on every deploy).
+#
+# Resolved once: "setpriv" when we can drop to the run ids and ask, "ownership"
+# when we cannot and must fall back to over-reporting.
+app_state_probe_kind() {
+    if [[ -z "${APP_STATE_PROBE_KIND:-}" ]]; then
+        if [[ $EUID -eq 0 ]] && command -v setpriv >/dev/null 2>&1; then
+            APP_STATE_PROBE_KIND=setpriv
+        else
+            APP_STATE_PROBE_KIND=ownership
+        fi
+    fi
+    printf '%s' "$APP_STATE_PROBE_KIND"
+}
+
+# --clear-groups matters: an app container has no supplementary groups, so
+# neither may this probe, or it reports access the app will not have.
+#
+# Run uid 0 falls back deliberately: root bypasses the permission bits, so a
+# probe as root answers "writable" for every path and proves nothing. Real
+# installs never get here — valid_run_id() rejects 0 and both entry points
+# validate before calling — but a probe that silently always passes is the kind
+# of check that certifies a broken tree, so refuse it rather than trust it.
+run_ids_can_write() {
+    local path="$1" owner
+    if [[ "$(app_state_probe_kind)" == setpriv && "$WOLF_RUN_UID" -ne 0 ]]; then
+        if [[ -d "$path" ]]; then
+            setpriv --reuid="$WOLF_RUN_UID" --regid="$WOLF_RUN_GID" --clear-groups \
+                test -w "$path" -a -x "$path" 2>/dev/null
+        else
+            setpriv --reuid="$WOLF_RUN_UID" --regid="$WOLF_RUN_GID" --clear-groups \
+                test -w "$path" 2>/dev/null
+        fi
+        return
+    fi
+    owner="$(stat -c '%u:%g' "$path" 2>/dev/null)" || return 1
+    [[ "$owner" == "${WOLF_RUN_UID}:${WOLF_RUN_GID}" ]]
+}
+
+# How deep to look. These trees hold entire Steam libraries, so the walk has to
+# be bounded, and a fault shows up near the top because the app's home directory
+# is the mount point itself: state root is depth 0, profile 1, app HOME 2, and
+# the directories the app image creates as root ($HOME/.steam, $HOME/homebrew)
+# are 3, with their children at 4.
+#
+# The repair and the doctor MUST share this. When they disagreed, diagnose.sh
+# reported a path at depth 4 that migrate_app_state_ownership never looked at,
+# so "fix: run Install" never cleared the warning it told the user to fix.
+APP_STATE_PROBE_DEPTH=4
+
+# Probing forks a process per path, so bound the candidate list. Only paths not
+# already owned by the run ids are probed at all, and the first failure ends the
+# scan, so this cap is only reached on a tree where everything checked so far is
+# fine.
+APP_STATE_PROBE_LIMIT=200
+
+# Prints the first path under $1 the run ids cannot write, if any. Ownership is
+# only the cheap pre-filter that enumerates candidates — a path already owned by
+# the run ids is writable by definition, so nothing else needs a probe.
+first_unwritable_path() {
+    local path
+    while read -r path; do
+        [[ -n "$path" ]] || continue
+        run_ids_can_write "$path" && continue
+        printf '%s\n' "$path"
+        return 0
+    done < <(find "$1" -maxdepth "$APP_STATE_PROBE_DEPTH" \
+                 \( ! -uid "$WOLF_RUN_UID" -o ! -gid "$WOLF_RUN_GID" \) \
+                 -print 2>/dev/null | head -n "$APP_STATE_PROBE_LIMIT")
+    return 0
+}
+
+# One-time deep repair. prepare_app_state_roots only seeds the ACL down to the
+# app HOME (depth 2), so directories that already existed when that seeding was
+# introduced carry nothing — on a real install those are $HOME/.steam and
+# $HOME/homebrew, created as root by the app image long before the plugin knew
+# to seed anything. Their children inherit nothing either, so the run uid cannot
+# write them however often the shallow refresh runs.
+#
+# Walking the whole tree costs the same as the chown -R beside it, and both only
+# run when the state is actually broken, so a healthy install never pays it.
+# Once every existing directory carries the default ACL, everything Wolf and the
+# app images create below it inherits access for good.
+repair_app_state_acls() {
+    local state_dir="$1" access defaults
+    command -v setfacl >/dev/null 2>&1 || return 0
+    access="u:${WOLF_RUN_UID}:rwX,g:${WOLF_RUN_GID}:rwX,m::rwX"
+    defaults="d:u:${WOLF_RUN_UID}:rwx,d:g:${WOLF_RUN_GID}:rwx,d:m::rwx"
+
+    # rwX leaves plain files without a spurious execute bit while still making
+    # every directory traversable. Default entries go on directories only.
+    # acl 2.3.2 happens to skip files under `-R -d` rather than fail, but that
+    # is not what setfacl(1) documents, so select the directories explicitly
+    # instead of depending on the version Unraid ships.
+    if ! setfacl -R -m "$access" -- "$state_dir"; then
+        warn "Could not grant ${WOLF_RUN_UID}:${WOLF_RUN_GID} access under ${state_dir}"
+        return 1
+    fi
+    if ! find "$state_dir" -type d -exec setfacl -m "$defaults" -- {} +; then
+        warn "Could not make app access inheritable under ${state_dir}; new app directories may be unwritable"
+        return 1
+    fi
 }
 
 # Wolf bind-mounts <appdata>/<state root>/<profile>/<app> as /home/retro inside
@@ -112,9 +216,14 @@ first_foreign_path() {
 # libraries — but it is only trusted when the tree agrees with it. A stamp that
 # recorded intent rather than reality is how a half-migrated install kept
 # looking migrated.
+#
+# "Agrees with it" now means the run ids can actually write the tree, not that
+# they own it. Wolf and the app images recreate directories as root on every
+# launch, so an ownership test never settles: it re-triggered the full chown on
+# every deploy and still reported the tree as broken afterwards.
 migrate_app_state_ownership() {
     local want="${WOLF_RUN_UID}:${WOLF_RUN_GID}"
-    local stamp state_dir stamped foreign clean=true found=false
+    local stamp state_dir stamped unwritable clean=true found=false
     stamp="$(app_state_stamp)"
     stamped="$(cat "$stamp" 2>/dev/null || true)"
 
@@ -122,21 +231,26 @@ migrate_app_state_ownership() {
         [[ -n "$state_dir" ]] || continue
         found=true
 
-        foreign="$(first_foreign_path "$state_dir")"
-        if [[ "$stamped" == "$want" && -z "$foreign" ]]; then
+        unwritable="$(first_unwritable_path "$state_dir")"
+        if [[ "$stamped" == "$want" && -z "$unwritable" ]]; then
             continue
         fi
 
-        info "Re-owning Wolf app state under ${state_dir} as ${want} — this may take a while"
+        info "Repairing Wolf app state under ${state_dir} for ${want} — this may take a while"
+        # ACLs first: they are what survives the next launch, when Wolf and the
+        # app image recreate their directories as root again. The chown behind
+        # them is the fallback for a host without setfacl, and it is transient
+        # by nature.
+        repair_app_state_acls "$state_dir" || clean=false
         if ! chown -R "$want" "$state_dir"; then
             warn "Could not re-own all of ${state_dir}; apps may fail to write their state"
             clean=false
             continue
         fi
 
-        foreign="$(first_foreign_path "$state_dir")"
-        if [[ -n "$foreign" ]]; then
-            warn "${foreign} is still not owned by ${want}; apps may fail to write their state"
+        unwritable="$(first_unwritable_path "$state_dir")"
+        if [[ -n "$unwritable" ]]; then
+            warn "${want} still cannot write ${unwritable}; apps may fail to write their state"
             clean=false
         fi
     done < <(app_state_dirs)
