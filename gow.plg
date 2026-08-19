@@ -23,6 +23,9 @@
 >
 
   <CHANGES>
+### 2026.08.19a
+- Refresh Wolf's udev rules from **Update Images**, not only from Install. The rules track the Wolf image and Update Images is how most people pick up a new one, so a newer Wolf could end up running against rules fetched for an older one — which is how the gamepad input leak came back after re-pulling images (refs #57). The rules now live in `scripts/udev-rules.sh`, shared by both entry points
+
 ### 2026.08.19
 - Fix Wolf's built-in "Test ball" aborting the moment it starts ("Wayland endpoint /tmp/sockets/ exists but is not a socket", games-on-whales/wolf#462). Apps that run without their own compositor have no Wayland socket, so Wolf's readiness check inspects `XDG_RUNTIME_DIR`, finds a directory, and kills the session. Deploy now sets `WOLF_SKIP_WAYLAND_SOCKET_WAIT=TRUE`, and **Update Images** patches an already-generated Compose file so existing installs are fixed without reconfiguring
 
