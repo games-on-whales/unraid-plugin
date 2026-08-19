@@ -8,6 +8,7 @@ info() { echo "==> $*"; }
 warn() { echo "WARN:  $*" >&2; }
 
 source "$(dirname "$0")/app-state.sh"
+source "$(dirname "$0")/udev-rules.sh"
 
 # Re-owning app state needs root, same as deploy.sh.
 [[ $EUID -eq 0 ]] || err "Must run as root"
@@ -72,6 +73,12 @@ docker rm -f WolfPulseAudio >/dev/null 2>&1 || true
 # here too, not only in deploy.sh (issue #66). Runs with the stack down: Wolf
 # rewrites config.toml as it shuts down, which would undo the run-id rewrite.
 sync_app_state_ownership
+
+# The udev rules have to track the Wolf image, and Update Images is how most
+# users pick up a new one. Refreshing them only from Install left a newer Wolf
+# running against rules fetched for an older one, which is how the gamepad leak
+# came back for the reporter of issue #57 after re-pulling the images.
+install_udev_rules
 
 docker compose -f "$COMPOSE_FILE" up -d
 
