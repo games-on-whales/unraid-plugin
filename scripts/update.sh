@@ -37,6 +37,23 @@ fi
 resolve_run_ids \
     || err "App run UID/GID must be numbers between 1 and 65533 (got ${WOLF_RUN_UID}:${WOLF_RUN_GID})"
 
+# Update Images keeps the existing docker-compose.yml rather than regenerating
+# it, so a stack deployed before this setting existed would never pick it up.
+# Without it, apps that run without their own compositor (Wolf's built-in
+# "Test ball") report an empty Wayland socket name, Wolf stats XDG_RUNTIME_DIR
+# itself, sees a directory, and aborts the stream with "Wayland endpoint
+# /tmp/sockets/ exists but is not a socket" (games-on-whales/wolf#462).
+ensure_wolf_skip_wayland_wait() {
+    local compose_file="$1"
+    [[ -f "$compose_file" ]] || return 0
+    grep -q 'WOLF_SKIP_WAYLAND_SOCKET_WAIT' "$compose_file" && return 0
+    grep -q '^      - XDG_RUNTIME_DIR=/tmp/sockets$' "$compose_file" || return 1
+    sed -i '/^      - XDG_RUNTIME_DIR=\/tmp\/sockets$/a\      - WOLF_SKIP_WAYLAND_SOCKET_WAIT=TRUE' "$compose_file"
+}
+
+ensure_wolf_skip_wayland_wait "$COMPOSE_FILE" \
+    || warn "Could not add WOLF_SKIP_WAYLAND_SOCKET_WAIT to ${COMPOSE_FILE}; click Install on the settings page to regenerate it"
+
 info "Pulling latest Wolf + Wolf Den images..."
 docker compose -f "$COMPOSE_FILE" pull
 
