@@ -391,7 +391,7 @@ YAML
     container_name: wolf-den
     environment:
       # Plain filesystem path, NOT a unix:// URL: wolf-den's entrypoint feeds
-      # this straight to `socat ... UNIX-CONNECT:${WOLF_SOCKET_PATH}` to build a
+      # this straight to \`socat ... UNIX-CONNECT:\${WOLF_SOCKET_PATH}\` to build a
       # uid-1000-owned proxy at /app/wolf.sock, then re-exports the unix:// form
       # itself for the .NET client. A unix:// prefix here makes socat treat it as
       # a literal filename, silently (2>/dev/null) fail to create the proxy, and
@@ -485,7 +485,7 @@ YAML
     container_name: wolf-den
     environment:
       # Plain filesystem path, NOT a unix:// URL: wolf-den's entrypoint feeds
-      # this straight to `socat ... UNIX-CONNECT:${WOLF_SOCKET_PATH}` to build a
+      # this straight to \`socat ... UNIX-CONNECT:\${WOLF_SOCKET_PATH}\` to build a
       # uid-1000-owned proxy at /app/wolf.sock, then re-exports the unix:// form
       # itself for the .NET client. A unix:// prefix here makes socat treat it as
       # a literal filename, silently (2>/dev/null) fail to create the proxy, and
