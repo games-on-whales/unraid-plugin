@@ -177,5 +177,20 @@ else
     note "\"XDG_RUNTIME_DIR is not owned by us\" until the stack is re-deployed"
 fi
 
+section "Wayland socket wait (Test ball)"
+# Read the live container, not the compose file: a stack deployed before this
+# setting existed keeps running with the old environment until it is recreated.
+wolf_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' wolf 2>/dev/null || true)"
+if [[ -z "$wolf_env" ]]; then
+    note "wolf container not running — could not check WOLF_SKIP_WAYLAND_SOCKET_WAIT"
+elif grep -qi '^WOLF_SKIP_WAYLAND_SOCKET_WAIT=\(TRUE\|1\)$' <<< "$wolf_env"; then
+    ok "WOLF_SKIP_WAYLAND_SOCKET_WAIT is set"
+else
+    bad "WOLF_SKIP_WAYLAND_SOCKET_WAIT is not set on the running wolf container"
+    note "apps without their own compositor (Wolf's \"Test ball\") abort with"
+    note "\"Wayland endpoint /tmp/sockets/ exists but is not a socket\";"
+    note "run Update Images, or Install, to recreate the stack with it"
+fi
+
 printf '\nDone. Nothing was modified.\n'
 exit 0

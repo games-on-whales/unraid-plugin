@@ -86,6 +86,48 @@ This sets `WOLF_USE_ZERO_COPY=FALSE` on the Wolf container. It trades a little
 latency for a stream that negotiates correctly. Leave the option enabled if your
 driver works with it — zero-copy is the faster path.
 
+## "Test ball" aborts immediately ("Wayland endpoint ... is not a socket")
+
+Wolf waits for an app's Wayland socket to appear before it starts the app, and
+aborts the stream if it never does. Apps configured with
+`start_virtual_compositor = false` — Wolf's built-in **Test ball**, and anything
+else that renders without its own compositor — do not have a Wayland socket at
+all, so Wolf reports an empty socket name, checks `XDG_RUNTIME_DIR`
+(`/tmp/sockets`) itself, finds a directory rather than a socket, and kills the
+session. Moonlight shows the stream for a second or two and drops back to the
+app list.
+
+Real apps (Steam, Firefox, and everything else the Wolf UI ships) start their
+own compositor and are unaffected — this only breaks the one app most people
+try first. Tracked upstream as
+[games-on-whales/wolf#462](https://github.com/games-on-whales/wolf/issues/462).
+
+### Check
+
+In the Wolf container log, right after the session starts:
+
+```text
+ERROR | Wayland endpoint /tmp/sockets/ exists but is not a socket (mode=40755)
+ERROR | [STREAM_SESSION] Wayland socket  was not ready, aborting runner startup
+INFO  | [GSTREAMER] Pipeline reached End Of Stream
+```
+
+Note the empty socket name in the second line — that is the tell.
+
+### Fix
+
+Nothing to configure: the plugin sets `WOLF_SKIP_WAYLAND_SOCKET_WAIT=TRUE` on
+the Wolf container, which turns the check off. Stacks deployed before plugin
+2026.08.19 pick it up from **Update Images**; **Install** regenerates the
+Compose file either way. Either action recreates the containers, which is what
+actually applies the change.
+
+To confirm it is applied:
+
+```bash
+grep WOLF_SKIP_WAYLAND_SOCKET_WAIT /mnt/user/appdata/gow/docker-compose.yml
+```
+
 ## Apps never start after updating (app state owned by the wrong user)
 
 Wolf runs the apps it launches as a fixed UID/GID and bind-mounts

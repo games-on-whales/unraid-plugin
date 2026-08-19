@@ -337,6 +337,15 @@ services:
       - WOLF_RENDER_NODE=${RENDER_NODE}
       - NVIDIA_DRIVER_VOLUME_NAME=nvidia-driver-vol
       - XDG_RUNTIME_DIR=/tmp/sockets
+      # Wolf aborts a session when the Wayland socket it waits for never turns
+      # up. Apps that run without their own compositor
+      # (start_virtual_compositor = false, e.g. Wolf's built-in "Test ball")
+      # report an empty socket name, so Wolf stats XDG_RUNTIME_DIR itself, sees
+      # a directory, and kills the stream with "Wayland endpoint /tmp/sockets/
+      # exists but is not a socket". Skipping the wait restores the behaviour
+      # those apps had before the check existed. See games-on-whales/wolf#462
+      # and docs/FAQ.md.
+      - WOLF_SKIP_WAYLAND_SOCKET_WAIT=TRUE
       - WOLF_CFG_FILE=${APPDATA}/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - WOLF_DEFAULT_RUN_UID=${WOLF_RUN_UID}
@@ -382,7 +391,7 @@ YAML
     container_name: wolf-den
     environment:
       # Plain filesystem path, NOT a unix:// URL: wolf-den's entrypoint feeds
-      # this straight to `socat ... UNIX-CONNECT:${WOLF_SOCKET_PATH}` to build a
+      # this straight to \`socat ... UNIX-CONNECT:\${WOLF_SOCKET_PATH}\` to build a
       # uid-1000-owned proxy at /app/wolf.sock, then re-exports the unix:// form
       # itself for the .NET client. A unix:// prefix here makes socat treat it as
       # a literal filename, silently (2>/dev/null) fail to create the proxy, and
@@ -432,6 +441,15 @@ services:
     environment:
       - WOLF_RENDER_NODE=${RENDER_NODE}
       - XDG_RUNTIME_DIR=/tmp/sockets
+      # Wolf aborts a session when the Wayland socket it waits for never turns
+      # up. Apps that run without their own compositor
+      # (start_virtual_compositor = false, e.g. Wolf's built-in "Test ball")
+      # report an empty socket name, so Wolf stats XDG_RUNTIME_DIR itself, sees
+      # a directory, and kills the stream with "Wayland endpoint /tmp/sockets/
+      # exists but is not a socket". Skipping the wait restores the behaviour
+      # those apps had before the check existed. See games-on-whales/wolf#462
+      # and docs/FAQ.md.
+      - WOLF_SKIP_WAYLAND_SOCKET_WAIT=TRUE
       - WOLF_CFG_FILE=${APPDATA}/cfg/config.toml
       - WOLF_DOCKER_SOCKET=/var/run/docker.sock
       - WOLF_DEFAULT_RUN_UID=${WOLF_RUN_UID}
@@ -467,7 +485,7 @@ YAML
     container_name: wolf-den
     environment:
       # Plain filesystem path, NOT a unix:// URL: wolf-den's entrypoint feeds
-      # this straight to `socat ... UNIX-CONNECT:${WOLF_SOCKET_PATH}` to build a
+      # this straight to \`socat ... UNIX-CONNECT:\${WOLF_SOCKET_PATH}\` to build a
       # uid-1000-owned proxy at /app/wolf.sock, then re-exports the unix:// form
       # itself for the .NET client. A unix:// prefix here makes socat treat it as
       # a literal filename, silently (2>/dev/null) fail to create the proxy, and
