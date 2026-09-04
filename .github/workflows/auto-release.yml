@@ -100,6 +100,12 @@ jobs:
           sha256sum dist/settings-ui.txz | awk '{print $1}' > dist/settings-ui.txz.sha256
           md5sum    dist/settings-ui.txz | awk '{print $1}' > dist/settings-ui.txz.md5
 
+      - name: Pin package hash in gow.plg
+        run: |
+          SHA256=$(cat dist/settings-ui.txz.sha256)
+          sed -i 's/<!ENTITY sha256[[:space:]]*"[^"]*">/<!ENTITY sha256    "'"$SHA256"'">/' gow.plg
+          grep -Fx '<!ENTITY sha256    "'"$SHA256"'">' gow.plg
+
       - name: Create GitHub release
         uses: ncipollo/release-action@v1
         with:

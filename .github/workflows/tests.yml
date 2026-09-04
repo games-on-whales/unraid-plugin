@@ -66,3 +66,6 @@ jobs:
           # The same suite must still pass where setfacl/setpriv are absent,
           # because that is the fallback path on a host without them.
           bash tests/app-state.sh
+
+      - name: NVIDIA driver-volume suite
+        run: bash tests/nvidia-driver.sh

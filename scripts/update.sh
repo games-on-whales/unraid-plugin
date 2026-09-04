@@ -1,6 +1,8 @@
 #!/bin/bash
 # update.sh — pull the latest Wolf + Wolf Den images and restart the stack
 
+set -euo pipefail
+
 source "$(dirname "$0")/vars.sh"
 
 err()  { echo "ERROR: $*" >&2; exit 1; }
@@ -9,6 +11,7 @@ warn() { echo "WARN:  $*" >&2; }
 
 source "$(dirname "$0")/app-state.sh"
 source "$(dirname "$0")/udev-rules.sh"
+source "$(dirname "$0")/nvidia-driver.sh"
 
 # Re-owning app state needs root, same as deploy.sh.
 [[ $EUID -eq 0 ]] || err "Must run as root"
@@ -67,6 +70,14 @@ docker compose -f "$COMPOSE_FILE" pull
 info "Restarting stack..."
 docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
 docker rm -f WolfPulseAudio >/dev/null 2>&1 || true
+
+# The external NVIDIA volume contains userspace libraries for one exact host
+# driver version. Update Images is the normal recovery path after changing the
+# Unraid NVIDIA driver, so refresh that volume while the stack is down and no
+# container is holding it open.
+if [[ "${GPU_VENDOR:-}" == "NVIDIA" ]]; then
+    build_nvidia_volume
+fi
 
 # New images can ship a new run uid, and users reach for Update Images rather
 # than Install after a plugin update — so the state on disk has to be checked
