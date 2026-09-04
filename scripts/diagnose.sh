@@ -22,6 +22,7 @@ note()    { printf '        %s\n' "$1"; }
 source "$GOW_CFG"
 
 APPDATA="${APPDATA:-${DEFAULT_APPDATA}}"
+WOLF_ZERO_COPY="${WOLF_ZERO_COPY:-true}"
 resolve_run_ids || err "App run UID/GID in ${GOW_CFG} is not a valid number pair"
 WANT="${WOLF_RUN_UID}:${WOLF_RUN_GID}"
 
@@ -30,12 +31,25 @@ note "version:  ${GOW_VERSION}"
 note "appdata:  ${APPDATA}"
 note "run ids:  ${WANT} (uid:gid apps run as)"
 note "compose:  ${APPDATA}/docker-compose.yml"
+note "gpu:      ${GPU_VENDOR:-unknown} ${GPU_NAME:-} (${RENDER_NODE:-unconfigured})"
 [[ -f "${APPDATA}/docker-compose.yml" ]] && ok "compose file present" || bad "no compose file — Wolf was never deployed"
 
 section "Containers"
+WOLF_DEN_STATUS="not found"
 for name in wolf wolf-den; do
     status="$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo 'not found')"
+    [[ "$name" == wolf-den ]] && WOLF_DEN_STATUS="$status"
     [[ "$status" == running ]] && ok "${name}: ${status}" || bad "${name}: ${status}"
+    [[ "$status" != "not found" ]] || continue
+
+    restarts="$(docker inspect -f '{{.RestartCount}}' "$name" 2>/dev/null || echo unknown)"
+    exit_code="$(docker inspect -f '{{.State.ExitCode}}' "$name" 2>/dev/null || echo unknown)"
+    oom_killed="$(docker inspect -f '{{.State.OOMKilled}}' "$name" 2>/dev/null || echo unknown)"
+    state_error="$(docker inspect -f '{{.State.Error}}' "$name" 2>/dev/null || true)"
+    if [[ "$status" != running || "$restarts" != 0 ]]; then
+        note "  restarts: ${restarts}; last exit: ${exit_code}; OOM killed: ${oom_killed}"
+        [[ -z "$state_error" ]] || note "  Docker error: ${state_error}"
+    fi
 done
 # Wolf names the app containers it spawns after the app (WolfSteam_<lobby>, …).
 app_containers="$(docker ps --format '{{.Names}}' --filter 'name=Wolf' 2>/dev/null | grep -v '^wolf' || true)"
@@ -50,6 +64,11 @@ if [[ -n "$app_containers" ]]; then
 else
     note "no app containers running"
 fi
+
+wolf_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' wolf 2>/dev/null || true)"
+# Scan a wider window than the report prints. A restart loop can add hundreds
+# of follow-on messages after the original GStreamer negotiation failure.
+wolf_logs="$(docker logs --tail 2000 wolf 2>&1 || true)"
 
 section "Saved client run ids (cfg/config.toml)"
 cfg_toml="${APPDATA}/cfg/config.toml"
@@ -177,10 +196,54 @@ else
     note "\"XDG_RUNTIME_DIR is not owned by us\" until the stack is re-deployed"
 fi
 
+section "NVIDIA driver and video pipeline"
+if [[ "${GPU_VENDOR:-}" != "NVIDIA" ]]; then
+    note "not applicable (${GPU_VENDOR:-GPU vendor unknown})"
+else
+    host_driver="$(cat /sys/module/nvidia/version 2>/dev/null || true)"
+    if [[ -z "$host_driver" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+        host_driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"
+    fi
+    volume_driver="$(docker volume inspect nvidia-driver-vol \
+        --format '{{ index .Labels "org.games-on-whales.nv_version" }}' 2>/dev/null || true)"
+
+    note "host driver:   ${host_driver:-unknown}"
+    note "volume driver: ${volume_driver:-unknown}"
+    if [[ -n "$host_driver" && "$volume_driver" == "$host_driver" ]]; then
+        ok "NVIDIA userspace volume matches the host driver"
+    elif [[ -n "$host_driver" && -n "$volume_driver" ]]; then
+        bad "NVIDIA userspace volume was built for ${volume_driver}, host uses ${host_driver}"
+        note "run Update Images to rebuild the driver volume"
+    else
+        bad "could not verify the NVIDIA userspace volume against the host driver"
+    fi
+
+    zero_copy_enabled=true
+    if grep -qi '^WOLF_USE_ZERO_COPY=\(FALSE\|0\)$' <<< "$wolf_env"; then
+        zero_copy_enabled=false
+    elif [[ -z "$wolf_env" && "${WOLF_ZERO_COPY,,}" == false ]]; then
+        zero_copy_enabled=false
+    fi
+    note "zero-copy:    ${zero_copy_enabled}"
+
+    # Issues #60, #66 and #76 all present as a stream that starts, renders no
+    # useful frame, then drops. The paired log signatures distinguish that
+    # failure from an app process or permission problem.
+    if [[ "$zero_copy_enabled" == true ]] \
+        && grep -q 'video/x-raw(memory:CUDAMemory)' <<< "$wolf_logs" \
+        && grep -Eq 'not-negotiated|not negotiated' <<< "$wolf_logs"; then
+        bad "recent Wolf logs contain the NVIDIA zero-copy negotiation failure"
+        note "Reconfigure, uncheck NVIDIA zero-copy pipeline, then Install"
+    elif [[ "$zero_copy_enabled" == true ]]; then
+        ok "recent Wolf logs contain no zero-copy negotiation failure"
+    else
+        ok "Wolf uses the legacy NVIDIA pipeline"
+    fi
+fi
+
 section "Wayland socket wait (Test ball)"
 # Read the live container, not the compose file: a stack deployed before this
 # setting existed keeps running with the old environment until it is recreated.
-wolf_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' wolf 2>/dev/null || true)"
 if [[ -z "$wolf_env" ]]; then
     note "wolf container not running — could not check WOLF_SKIP_WAYLAND_SOCKET_WAIT"
 elif grep -qi '^WOLF_SKIP_WAYLAND_SOCKET_WAIT=\(TRUE\|1\)$' <<< "$wolf_env"; then
@@ -191,6 +254,28 @@ else
     note "\"Wayland endpoint /tmp/sockets/ exists but is not a socket\";"
     note "run Update Images, or Install, to recreate the stack with it"
 fi
+
+section "Recent container logs"
+print_recent_logs() {
+    local name="$1" lines="$2" output
+    docker inspect "$name" >/dev/null 2>&1 || return 0
+    note "${name} (last ${lines} lines):"
+    output="$(docker logs --tail "$lines" --timestamps "$name" 2>&1 || true)"
+    if [[ -z "$output" ]]; then
+        note "  no log output"
+    else
+        printf '%s\n' "$output" | sed 's/^/        /'
+    fi
+}
+
+# Wolf owns stream setup and records the useful error when an app container
+# disappears. Include its tail on every run. Add the other containers when
+# their own process is the likely failure point.
+print_recent_logs wolf 80
+[[ "$WOLF_DEN_STATUS" == running ]] || print_recent_logs wolf-den 40
+while read -r c; do
+    [[ -n "$c" ]] && print_recent_logs "$c" 40
+done <<< "$app_containers"
 
 printf '\nDone. Nothing was modified.\n'
 exit 0

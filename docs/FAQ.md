@@ -13,6 +13,10 @@ the output when reporting an issue; it answers most of the questions below
 without a round trip. From a terminal it is
 `bash /boot/config/plugins/gow/scripts/diagnose.sh`.
 
+Diagnostics also prints each container's restart count and last exit state. It
+includes recent logs from Wolf and any running app containers. A restarting
+container now carries its failure in the same report as its status.
+
 ## NVIDIA Wayland support (nvidia_drm.modeset)
 
 Wolf composes its game stream through a Wayland compositor, and Wayland on
@@ -221,6 +225,33 @@ Two causes, both reported by Diagnostics:
 - **Appdata is on a `noexec` mount.** Nothing can execute from there, so no
   chmod helps. This shows up on some Unassigned Devices shares. Move appdata to
   a share mounted without `noexec`, or remount it.
+
+## Put Steam libraries on another disk
+
+Wolf's single state folder contains its configuration, pairing records, and app
+homes. Steam can still keep its bulk game files on another disk through an
+additional container mount. The cache then carries the small files and logs,
+while the selected disk carries the library.
+
+Create a host directory and give the configured app user access. The default
+app UID/GID is `99:100`:
+
+```bash
+mkdir -p /mnt/disks/games
+chown 99:100 /mnt/disks/games
+chmod 775 /mnt/disks/games
+```
+
+Open Wolf Den, edit the Steam app, expand **Advanced Options**, and add this
+entry under **Mounts**:
+
+```text
+/mnt/disks/games:/games:rw
+```
+
+Restart the Steam stream. Open **Steam > Settings > Storage**, add `/games`,
+and choose that library when installing a game. Use your configured App run
+UID/GID for the host directory if you changed it from `99:100`.
 
 ## Moonlight discovery and mDNS/Avahi warnings
 

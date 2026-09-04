@@ -24,6 +24,12 @@
 >
 
   <CHANGES>
+### 2026.09.04
+- Pin `settings-ui.txz` to the SHA-256 generated from the package in the release workflow, so Unraid verifies the root-installed download and Community Applications can retain the plugin (refs #79)
+- Rebuild the NVIDIA userspace driver volume from **Update Images** when its recorded version differs from the host driver; Install already performed this check, but the normal update path could keep stale libraries
+- Report container restart counts, exit state, NVIDIA driver-volume mismatches, zero-copy negotiation failures, and recent logs from Diagnostics, giving restart loops and black-screen reports enough evidence to act on (refs #78, #76, #66)
+- Document a separate Steam library mount for keeping appdata on cache while games live on another disk (refs #77)
+
 ### 2026.08.19a
 - Refresh Wolf's udev rules from **Update Images**, not only from Install. The rules track the Wolf image and Update Images is how most people pick up a new one, so a newer Wolf could end up running against rules fetched for an older one — which is how the gamepad input leak came back after re-pulling images (refs #57). The rules now live in `scripts/udev-rules.sh`, shared by both entry points
 
