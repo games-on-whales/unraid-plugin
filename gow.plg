@@ -4,6 +4,7 @@
 <!ENTITY author    "games-on-whales">
 <!ENTITY org       "games-on-whales">
 <!ENTITY version   "2026.08.19a">
+<!ENTITY sha256    "0000000000000000000000000000000000000000000000000000000000000000">
 <!ENTITY launch    "Settings/gow">
 <!ENTITY gitReleaseURL "https://github.com/&org;/unraid-plugin/releases/download/&version;">
 <!ENTITY pluginURL "https://github.com/&org;/unraid-plugin/releases/latest/download/&name;.plg">
@@ -161,6 +162,7 @@
        refreshed on update — users kept running a stale deploy.sh. -->
   <FILE Name="&plugin;/packages/settings-ui-&version;.txz">
     <URL>&gitReleaseURL;/settings-ui.txz</URL>
+    <SHA256>&sha256;</SHA256>
   </FILE>
 
   <!-- Install -->
