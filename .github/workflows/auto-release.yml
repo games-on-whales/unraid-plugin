@@ -1,13 +1,10 @@
 name: auto-release
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 2026.05.25). Leave empty to auto-generate from today.'
+        description: 'Calendar release (YYYY.MM). Leave empty for the current UTC month.'
         required: false
         type: string
 
@@ -26,29 +23,19 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          TODAY=$(date -u '+%Y.%m.%d')
+          VERSION="${INPUT_VERSION:-$(date -u '+%Y.%m')}"
+          VERSION="${VERSION#v}"
+          [[ "$VERSION" =~ ^[0-9]{4}\.(0[1-9]|1[0-2])$ ]] || exit 1
           git fetch --tags --quiet
-
-          # Find the latest tag for today (2026.05.25, 2026.05.25a, 2026.05.25b …)
-          LATEST=$(git tag -l "${TODAY}*" | sort -V | tail -1)
-
-          if [ -z "$LATEST" ]; then
-            VERSION="$TODAY"
-          elif [ "$LATEST" = "$TODAY" ]; then
-            VERSION="${TODAY}a"
-          else
-            SUFFIX="${LATEST#$TODAY}"
-            NEXT=$(echo "$SUFFIX" | tr 'a-y' 'b-z')
-            VERSION="${TODAY}${NEXT}"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "Release v$VERSION already exists; refusing to replace its artifacts." >&2
+            exit 1
           fi
-
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update gow.plg version
         id: bump
@@ -66,11 +53,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add gow.plg
           git commit -m "Release ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:beta
 
       - name: Create and push tag
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.tag }}"
           # Skip if the tag already exists (e.g. manual dispatch re-releasing an existing tag)
           if git rev-parse "$VERSION" >/dev/null 2>&1; then
             echo "Tag $VERSION already exists, skipping tag creation"
@@ -110,6 +97,6 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           artifacts: "dist/settings-ui.txz,dist/settings-ui.txz.sha256,dist/settings-ui.txz.md5,gow.plg"
-          tag: ${{ steps.version.outputs.version }}
+          tag: ${{ steps.version.outputs.tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
           generateReleaseNotes: true

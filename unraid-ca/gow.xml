@@ -16,12 +16,12 @@ Games on Whales lets you run a low-latency game/desktop streaming host on your U
 NVIDIA users: please read the FAQ section on `nvidia_drm.modeset` before reporting black-screen issues.
 </Overview>
 <Support>https://forums.unraid.net/forum/61-plugin-support/</Support>
-<Icon>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Icon>
+<Icon>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/beta/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Icon>
 <Date>2026-05-21</Date>
 <MinVer>6.12.0</MinVer>
 <Requires>
 The "Compose Manager" plugin must be installed first. The plugin install will refuse to proceed without it.
 </Requires>
 <RequiresFile>/boot/config/plugins/compose.manager.plg</RequiresFile>
-<Screenshot>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/main/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Screenshot>
+<Screenshot>https://raw.githubusercontent.com/games-on-whales/unraid-plugin/beta/packages/settings-ui/root/usr/local/emhttp/plugins/gow/images/gow.png</Screenshot>
 </Containers>

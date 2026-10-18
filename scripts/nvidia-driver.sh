@@ -52,7 +52,7 @@ build_nvidia_volume() {
 
     info "Building NVIDIA driver volume — this may take several minutes..."
     curl -fsSL \
-        "https://raw.githubusercontent.com/games-on-whales/gow/master/images/nvidia-driver/Dockerfile" \
+        "https://raw.githubusercontent.com/games-on-whales/gow/beta/images/nvidia-driver/Dockerfile" \
         | docker build -t gow/nvidia-driver:latest -f - \
             --build-arg NV_VERSION="${NV_VERSION}" .
 
